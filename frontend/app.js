@@ -22,6 +22,13 @@ let dropTargetGroupId = null;
 
 const $ = (id) => document.getElementById(id);
 
+// 优先级：数值越小越靠前；旧数据没有 priority 字段时按“中”处理
+const PRIORITY_ORDER = { urgent: 0, high: 1, medium: 2, low: 3 };
+const PRIORITY_LABEL = { urgent: '加急', high: '高', medium: '中', low: '低' };
+function normalizePriority(p) {
+  return Object.prototype.hasOwnProperty.call(PRIORITY_ORDER, p) ? p : 'medium';
+}
+
 // ---------- 工具函数 ----------
 function uid(prefix = 'x') {
   return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
@@ -77,7 +84,7 @@ function formatDue(ts) {
 
 function dueState(todo) {
   if (todo.done || todo.due == null) return '';
-  const trigger = todo.due - todo.remind_before * 60000;
+  const trigger = todo.due - todo.remindBefore * 60000;
   const now = Date.now();
   if (now >= todo.due) return 'overdue';
   if (now >= trigger) return 'urgent';
@@ -139,13 +146,17 @@ function renderTodos() {
   let list = store.todos.slice();
   if (todoFilter === 'pending') list = list.filter((t) => !t.done);
   if (todoFilter === 'done') list = list.filter((t) => t.done);
-  // 排序：未完成在前，按截止时间升序
+  // 排序：未完成在前 → 优先级（加急>高>中>低）→ 截止时间升序 → 创建时间倒序
   list.sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
-    if (a.due == null && b.due == null) return b.created_at - a.created_at;
+    const pa = PRIORITY_ORDER[normalizePriority(a.priority)];
+    const pb = PRIORITY_ORDER[normalizePriority(b.priority)];
+    if (pa !== pb) return pa - pb;
+    if (a.due == null && b.due == null) return b.createdAt - a.createdAt;
     if (a.due == null) return 1;
     if (b.due == null) return -1;
-    return a.due - b.due;
+    if (a.due !== b.due) return a.due - b.due;
+    return b.createdAt - a.createdAt;
   });
 
   if (list.length === 0) {
@@ -156,7 +167,8 @@ function renderTodos() {
   container.innerHTML = list.map((t) => {
     const state = dueState(t);
     const stateClass = state ? ` ${state}` : '';
-    const remindText = t.remind_before > 0 ? `提前 ${t.remind_before} 分钟` : '准时提醒';
+    const priority = normalizePriority(t.priority);
+    const remindText = t.remindBefore > 0 ? `提前 ${t.remindBefore} 分钟` : '准时提醒';
     return `
       <div class="todo${stateClass}${t.done ? ' done' : ''}" data-todo="${escapeHtml(t.id)}">
         <button class="todo-check" data-toggle="${escapeHtml(t.id)}" title="切换完成">${t.done ? '✓' : ''}</button>
@@ -164,6 +176,7 @@ function renderTodos() {
           <div class="todo-title">${escapeHtml(t.title)}</div>
           ${t.note ? `<div class="todo-note">${escapeHtml(t.note)}</div>` : ''}
           <div class="todo-meta">
+            <span class="priority-tag p-${priority}">${PRIORITY_LABEL[priority]}</span>
             <span class="todo-due">🕐 ${formatDue(t.due)}${t.due != null && !t.done ? ' · ' + timeLeftText(t) : ''}</span>
             ${t.due != null ? `<span class="remind-tag">${remindText}</span>` : ''}
           </div>
@@ -511,7 +524,8 @@ function openTodoModal(todo) {
   $('todoTitle').value = todo?.title ?? '';
   $('todoNote').value = todo?.note ?? '';
   $('todoDue').value = tsToLocalInput(todo?.due ?? null);
-  $('todoRemind').value = String(todo?.remind_before ?? 0);
+  $('todoPriority').value = normalizePriority(todo?.priority);
+  $('todoRemind').value = String(todo?.remindBefore ?? 0);
   openModal('todoModal');
 }
 
@@ -524,7 +538,8 @@ $('saveTodoBtn').addEventListener('click', () => {
     title,
     note: $('todoNote').value.trim(),
     due,
-    remind_before: Number($('todoRemind').value),
+    priority: normalizePriority($('todoPriority').value),
+    remindBefore: Number($('todoRemind').value),
   };
   if (editingTodoId) {
     const t = store.todos.find((x) => x.id === editingTodoId);
@@ -536,7 +551,7 @@ $('saveTodoBtn').addEventListener('click', () => {
   } else {
     store.todos.push({
       id: uid('t'), ...data,
-      done: false, reminded: false, created_at: Date.now(),
+      done: false, reminded: false, createdAt: Date.now(),
     });
   }
   save();

@@ -229,6 +229,15 @@ body.hide-names .sc-name { display: none; }
 .todo.urgent .todo-due { color: var(--warn); }
 .todo.overdue .todo-due { color: var(--danger); font-weight: 600; }
 .remind-tag { font-size: 11px; background: var(--bg-soft); color: var(--text-dim); padding: 2px 8px; border-radius: 10px; }
+/* 优先级标签 */
+.priority-tag {
+  font-size: 11px; font-weight: 600; padding: 2px 9px; border-radius: 10px;
+  border: 1px solid transparent; white-space: nowrap;
+}
+.priority-tag.p-low { background: var(--bg-soft); color: var(--text-dim); border-color: var(--border); }
+.priority-tag.p-medium { background: rgba(91,140,255,.14); color: var(--accent); border-color: rgba(91,140,255,.35); }
+.priority-tag.p-high { background: rgba(255,184,77,.14); color: var(--warn); border-color: rgba(255,184,77,.35); }
+.priority-tag.p-urgent { background: rgba(255,92,108,.16); color: var(--danger); border-color: rgba(255,92,108,.4); }
 .todo-actions { display: flex; gap: 2px; }
 
 .empty {

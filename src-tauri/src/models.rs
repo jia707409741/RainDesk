@@ -40,6 +40,9 @@ pub struct Todo {
     pub due: Option<i64>,
     /// 提前提醒分钟数
     pub remind_before: i32,
+    /// 优先级：low | medium | high | urgent（旧数据缺省为 medium）
+    #[serde(default = "default_priority")]
+    pub priority: String,
     pub done: bool,
     /// 是否已经弹窗提醒过，避免重复提醒
     pub reminded: bool,
@@ -73,6 +76,10 @@ pub struct Store {
     pub todos: Vec<Todo>,
     #[serde(default)]
     pub settings: Settings,
+}
+
+fn default_priority() -> String {
+    "medium".into()
 }
 
 fn now_ms() -> i64 {
@@ -136,6 +143,7 @@ impl Default for Store {
                     note: "在「快捷方式」页管理分组图标，在「待办事项」页添加带截止时间的任务。".into(),
                     due: None,
                     remind_before: 0,
+                    priority: default_priority(),
                     done: false,
                     reminded: false,
                     created_at: t,

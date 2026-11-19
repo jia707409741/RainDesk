@@ -149,6 +149,16 @@
       <label>备注<textarea id="todoNote" rows="2" placeholder="补充说明（可选）"></textarea></label>
       <div class="row">
         <label>截止时间<input type="datetime-local" id="todoDue" /></label>
+        <label>优先级
+          <select id="todoPriority">
+            <option value="low">低</option>
+            <option value="medium" selected>中</option>
+            <option value="high">高</option>
+            <option value="urgent">加急</option>
+          </select>
+        </label>
+      </div>
+      <div class="row">
         <label>提前提醒
           <select id="todoRemind">
             <option value="0">准时</option>
