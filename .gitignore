@@ -1,0 +1,39 @@
+# ===== 所有以 . 开头的文件 / 目录 =====
+.*
+!.gitignore
+
+# ===== Rust / Tauri 编译产物 =====
+target/
+**/target/
+src-tauri/gen/
+*.exe
+*.dll
+*.pdb
+*.ilk
+*.exp
+*.lib
+*.a
+*.o
+*.obj
+*.pch
+*.tlog
+*.idb
+*.cache
+*.tmp
+*.log
+
+# ===== 前端依赖 / 构建产物 =====
+node_modules/
+dist/
+build/
+
+# ===== 运行时用户数据（不要提交） =====
+data/
+store.json
+location.json
+*.json.tmp
+
+# ===== 系统 / 编辑器杂项 =====
+Thumbs.db
+desktop.ini
+.DS_Store

@@ -1,0 +1,23 @@
+[package]
+name = "raindesk"
+version = "0.1.0"
+description = "RainDesk - 分组启动器与待办提醒"
+authors = ["RainDesk"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "raindesk_lib"
+# 纯 Windows 桌面不需要 cdylib（那是移动端绑定用的）。
+# gnu 工具链下 cdylib 导出符号过多会触发 ld 的 "export ordinal too large"。
+crate-type = ["rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-notification = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-dialog = "2"

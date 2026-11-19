@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <title>待办提醒</title>
+  <link rel="stylesheet" href="./reminder.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "@tauri-apps/api/core": "./vendor/tauri/core.js",
+      "@tauri-apps/api/event": "./vendor/tauri/event.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="reminder-card">
+    <div class="accent-bar"></div>
+    <div class="content">
+      <div class="header">
+        <span class="bell">⏰</span>
+        <div class="header-text">
+          <div class="title">待办提醒</div>
+          <div class="sub" id="extraCount"></div>
+        </div>
+        <button class="close" id="closeBtn" title="关闭">✕</button>
+      </div>
+      <div class="body">
+        <div class="todo-title" id="todoTitle">—</div>
+        <div class="todo-note" id="todoNote"></div>
+        <div class="due" id="dueText"></div>
+      </div>
+      <div class="actions">
+        <button class="btn btn-later" id="laterBtn">稍后处理</button>
+        <button class="btn btn-done" id="doneBtn">✓ 标记完成</button>
+      </div>
+    </div>
+  </div>
+  <script type="module" src="./reminder.js"></script>
+</body>
+</html>

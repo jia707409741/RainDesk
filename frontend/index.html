@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>RainDesk</title>
+  <link rel="stylesheet" href="./styles.css" />
+  <script type="importmap">
+  {
+    "imports": {
+      "@tauri-apps/api/core": "./vendor/tauri/core.js",
+      "@tauri-apps/api/event": "./vendor/tauri/event.js",
+      "@tauri-apps/api/webview": "./vendor/tauri/webview.js",
+      "@tauri-apps/api/window": "./vendor/tauri/window.js"
+    }
+  }
+  </script>
+</head>
+<body>
+  <div class="app">
+    <!-- 可拖动标题栏 -->
+    <div class="titlebar" data-tauri-drag-region>
+      <div class="titlebar-brand" data-tauri-drag-region>🌧️ RainDesk</div>
+      <div class="titlebar-controls">
+        <button class="win-btn" id="winMin" title="最小化">─</button>
+        <button class="win-btn" id="winMax" title="最大化">□</button>
+        <button class="win-btn win-close" id="winClose" title="关闭">✕</button>
+      </div>
+    </div>
+
+    <div class="app-body">
+      <!-- 侧边栏 -->
+      <aside class="sidebar">
+        <nav class="nav">
+          <button class="nav-item active" data-view="launcher">
+            <span class="nav-icon">⚡</span><span>快捷方式</span>
+          </button>
+          <button class="nav-item" data-view="todos">
+            <span class="nav-icon">✅</span><span>待办事项</span>
+            <span class="badge hidden" id="todoBadge">0</span>
+          </button>
+        </nav>
+        <div class="sidebar-footer">
+          <button class="ghost-btn" id="openSettings" title="设置">⚙️ 设置</button>
+          <button class="ghost-btn" id="openDataDir" title="打开数据目录">📂 数据目录</button>
+          <div class="version">v0.1.0</div>
+        </div>
+      </aside>
+
+      <!-- 主内容区 -->
+      <main class="main">
+        <!-- 快捷方式视图 -->
+        <section class="view" id="view-launcher">
+          <header class="view-header">
+            <div>
+              <h1>快捷方式</h1>
+              <p class="subtitle">按分组管理 · 拖动图标可排序或跨分组移动 · 可从系统拖入文件</p>
+            </div>
+            <div class="header-actions">
+              <button class="btn btn-secondary" id="addGroupBtn">＋ 新建分组</button>
+            </div>
+          </header>
+          <div class="groups" id="groups"></div>
+        </section>
+
+        <!-- 待办视图 -->
+        <section class="view hidden" id="view-todos">
+          <header class="view-header">
+            <div>
+              <h1>待办事项</h1>
+              <p class="subtitle">设置截止时间，到点自动弹窗提醒</p>
+            </div>
+            <div class="header-actions">
+              <button class="btn btn-primary" id="addTodoBtn">＋ 新建待办</button>
+            </div>
+          </header>
+          <div class="todo-filters">
+            <button class="filter active" data-filter="all">全部</button>
+            <button class="filter" data-filter="pending">进行中</button>
+            <button class="filter" data-filter="done">已完成</button>
+          </div>
+          <div class="todos" id="todos"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <!-- 文件拖入遮罩 -->
+  <div class="drop-overlay hidden" id="dropOverlay">
+    <div class="drop-overlay-inner">
+      <div class="drop-icon">📥</div>
+      <h2>松开以添加快捷方式</h2>
+      <p id="dropHint">将添加到当前鼠标所在分组</p>
+    </div>
+  </div>
+
+  <!-- 分组编辑弹窗 -->
+  <div class="modal hidden" id="groupModal">
+    <div class="modal-card">
+      <h2 id="groupModalTitle">新建分组</h2>
+      <label>分组名称<input type="text" id="groupName" placeholder="例如：开发工具" /></label>
+      <label>图标（emoji）<input type="text" id="groupIcon" placeholder="🚀" maxlength="4" /></label>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-close="groupModal">取消</button>
+        <button class="btn btn-primary" id="saveGroupBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 快捷方式编辑弹窗 -->
+  <div class="modal hidden" id="shortcutModal">
+    <div class="modal-card">
+      <h2 id="shortcutModalTitle">添加快捷方式</h2>
+      <label>名称<input type="text" id="scName" placeholder="例如：VS Code" /></label>
+      <label>类型
+        <select id="scKind">
+          <option value="app">应用程序</option>
+          <option value="url">网址</option>
+          <option value="folder">文件夹</option>
+          <option value="command">命令</option>
+        </select>
+      </label>
+      <label>目标<input type="text" id="scTarget" placeholder="路径 / URL / 命令" /></label>
+      <div class="row">
+        <label>图标（emoji）<input type="text" id="scIcon" placeholder="💻" maxlength="4" /></label>
+        <label>颜色
+          <select id="scColor">
+            <option value="blue">蓝</option>
+            <option value="green">绿</option>
+            <option value="purple">紫</option>
+            <option value="orange">橙</option>
+            <option value="pink">粉</option>
+            <option value="cyan">青</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-close="shortcutModal">取消</button>
+        <button class="btn btn-primary" id="saveShortcutBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 待办编辑弹窗 -->
+  <div class="modal hidden" id="todoModal">
+    <div class="modal-card">
+      <h2 id="todoModalTitle">新建待办</h2>
+      <label>标题<input type="text" id="todoTitle" placeholder="要做什么？" /></label>
+      <label>备注<textarea id="todoNote" rows="2" placeholder="补充说明（可选）"></textarea></label>
+      <div class="row">
+        <label>截止时间<input type="datetime-local" id="todoDue" /></label>
+        <label>提前提醒
+          <select id="todoRemind">
+            <option value="0">准时</option>
+            <option value="5">提前 5 分钟</option>
+            <option value="10">提前 10 分钟</option>
+            <option value="30">提前 30 分钟</option>
+            <option value="60">提前 1 小时</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-close="todoModal">取消</button>
+        <button class="btn btn-primary" id="saveTodoBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 确认弹窗 -->
+  <div class="modal hidden" id="confirmModal">
+    <div class="modal-card modal-sm">
+      <h2>确认操作</h2>
+      <p id="confirmText" class="confirm-text"></p>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-close="confirmModal">取消</button>
+        <button class="btn btn-danger" id="confirmOkBtn">确认</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 设置弹窗 -->
+  <div class="modal hidden" id="settingsModal">
+    <div class="modal-card settings-card">
+      <h2>⚙️ 设置</h2>
+      <div class="settings-group">
+        <h3>启动</h3>
+        <label class="setting-row">
+          <span class="setting-label">开机自动启动
+            <small>登录 Windows 后自动运行 RainDesk</small>
+          </span>
+          <input type="checkbox" id="setAutostart" class="switch" />
+        </label>
+      </div>
+      <div class="settings-group">
+        <h3>外观个性化</h3>
+        <label class="setting-row">
+          <span class="setting-label">图标大小
+            <small id="iconSizeLabel">60 px</small>
+          </span>
+          <input type="range" id="setIconSize" min="44" max="88" step="2" value="60" />
+        </label>
+        <label class="setting-row">
+          <span class="setting-label">显示图标名称</span>
+          <input type="checkbox" id="setShowNames" class="switch" checked />
+        </label>
+        <div class="setting-row">
+          <span class="setting-label">预览</span>
+          <div class="icon-preview" id="iconPreview">
+            <div class="sc-icon-box c-blue">📁</div>
+            <span class="preview-name">文件资源管理器</span>
+          </div>
+        </div>
+      </div>
+      <div class="settings-group">
+        <h3>数据目录</h3>
+        <div class="data-dir-row">
+          <input type="text" id="dataDirInput" placeholder="正在读取…" spellcheck="false" />
+          <button class="btn btn-secondary btn-sm" id="pickDataDirBtn">浏览…</button>
+        </div>
+        <div class="data-dir-actions">
+          <button class="btn btn-primary btn-sm" id="applyDataDirBtn">应用</button>
+          <button class="btn btn-secondary btn-sm" id="openDataDirBtn">打开目录</button>
+          <button class="btn btn-ghost btn-sm" id="resetDataDirBtn">恢复默认</button>
+        </div>
+        <p class="setting-hint" id="dataDirHint">切换到空目录会复制当前数据（原文件保留备份）；选择已有 store.json 的目录则直接使用其中数据。</p>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-primary" data-close="settingsModal">完成</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="toast hidden" id="toast"></div>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
