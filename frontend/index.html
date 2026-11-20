@@ -75,9 +75,18 @@
             </div>
           </header>
           <div class="todo-filters">
-            <button class="filter active" data-filter="all">全部</button>
-            <button class="filter" data-filter="pending">进行中</button>
+            <button class="filter" data-filter="all">全部</button>
+            <button class="filter active" data-filter="pending">进行中</button>
             <button class="filter" data-filter="done">已完成</button>
+            <label class="select-all" title="全选/取消全选当前列表"><input type="checkbox" id="selectAllTodo" /> 全选</label>
+          </div>
+          <div class="todo-toolbar" id="todoToolbar">
+            <span class="toolbar-hint" id="toolbarHint">勾选待办后可执行操作</span>
+            <div class="toolbar-actions">
+              <button class="toolbar-btn btn-finish" id="finishSelectedBtn" title="办结选中的待办" disabled>✓ 办结</button>
+              <button class="toolbar-btn" id="editSelectedBtn" title="编辑选中的待办" disabled>✏️ 编辑</button>
+              <button class="toolbar-btn btn-danger-outline" id="deleteSelectedBtn" title="删除选中的待办" disabled>🗑 删除</button>
+            </div>
           </div>
           <div class="todos" id="todos"></div>
         </section>
@@ -145,8 +154,8 @@
   <div class="modal hidden" id="todoModal">
     <div class="modal-card">
       <h2 id="todoModalTitle">新建待办</h2>
-      <label>标题<input type="text" id="todoTitle" placeholder="要做什么？" /></label>
-      <label>备注<textarea id="todoNote" rows="2" placeholder="补充说明（可选）"></textarea></label>
+      <label>标题<input type="text" id="todoTitle" placeholder="要做什么？" maxlength="20" /></label>
+      <label>备注<textarea id="todoNote" rows="2" placeholder="补充说明（可选）" maxlength="500"></textarea></label>
       <div class="row">
         <label>截止时间<input type="datetime-local" id="todoDue" /></label>
         <label>优先级
@@ -172,6 +181,38 @@
       <div class="modal-actions">
         <button class="btn btn-secondary" data-close="todoModal">取消</button>
         <button class="btn btn-primary" id="saveTodoBtn">保存</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- 待办详情弹窗 -->
+  <div class="modal hidden" id="todoDetailModal">
+    <div class="modal-card">
+      <h2 id="detailModalTitle">待办详情</h2>
+      <div class="detail-field">
+        <div class="detail-label">标题</div>
+        <div class="detail-value" id="detailTitle"></div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-label">备注</div>
+        <div class="detail-value detail-note" id="detailNote"></div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-label">截止时间</div>
+        <div class="detail-value" id="detailDue"></div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-label">优先级</div>
+        <div class="detail-value" id="detailPriority"></div>
+      </div>
+      <div class="detail-field">
+        <div class="detail-label">提前提醒</div>
+        <div class="detail-value" id="detailRemind"></div>
+      </div>
+      <div class="modal-actions">
+        <button class="btn btn-secondary" data-close="todoDetailModal">关闭</button>
+        <button class="btn btn-primary" id="detailEditBtn">✏️ 编辑</button>
+        <button class="btn btn-success" id="detailFinishBtn">✓ 办结</button>
       </div>
     </div>
   </div>

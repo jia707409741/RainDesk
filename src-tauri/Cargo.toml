@@ -1,6 +1,6 @@
 [package]
 name = "raindesk"
-version = "0.1.0"
+version = "0.1.1"
 description = "RainDesk - 分组启动器与待办提醒"
 authors = ["RainDesk"]
 edition = "2021"

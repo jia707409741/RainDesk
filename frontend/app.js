@@ -6,10 +6,13 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 // ---------- 全局状态 ----------
 let store = { groups: [], todos: [] };
 let currentView = 'launcher';
-let todoFilter = 'all';
+let todoFilter = 'pending'; // 默认展示"进行中"
+let selectedTodoIds = new Set(); // 批量删除：已勾选的待办 id
+let visibleTodoIds = [];         // 当前筛选下可见的待办 id（用于全选）
 let editingGroupId = null;
 let editingShortcut = null; // { groupId, id }
 let editingTodoId = null;
+let detailTodoId = null; // 详情弹窗当前展示的待办 id
 let confirmAction = null;
 let dataDirDefault = ''; // 应用默认数据目录，用于“恢复默认”
 
@@ -141,6 +144,22 @@ function renderGroups() {
 }
 
 // ---------- 渲染：待办 ----------
+// 同步独立操作栏（办结/编辑/删除）的可用状态、提示文案，以及"全选"复选框状态
+function updateTodoToolbar() {
+  const n = selectedTodoIds.size;
+  $('finishSelectedBtn').disabled = n === 0;
+  $('editSelectedBtn').disabled = n !== 1; // 编辑仅对单条生效
+  $('deleteSelectedBtn').disabled = n === 0;
+  $('toolbarHint').textContent = n > 0 ? `已选中 ${n} 条待办` : '勾选待办后可执行操作';
+  const box = $('selectAllTodo');
+  if (box) {
+    const all = visibleTodoIds.length > 0 && visibleTodoIds.every((id) => selectedTodoIds.has(id));
+    const some = visibleTodoIds.some((id) => selectedTodoIds.has(id));
+    box.checked = all;
+    box.indeterminate = !all && some;
+  }
+}
+
 function renderTodos() {
   const container = $('todos');
   let list = store.todos.slice();
@@ -159,34 +178,39 @@ function renderTodos() {
     return b.createdAt - a.createdAt;
   });
 
+  visibleTodoIds = list.map((t) => t.id);
+  // 清掉已不存在的待办的选择，避免残留
+  const existing = new Set(store.todos.map((t) => t.id));
+  for (const id of selectedTodoIds) if (!existing.has(id)) selectedTodoIds.delete(id);
+
   if (list.length === 0) {
     container.innerHTML = `<div class="empty"><span class="empty-icon">✅</span>这里空空如也，添加一个待办吧</div>`;
-    return;
-  }
-
-  container.innerHTML = list.map((t) => {
-    const state = dueState(t);
-    const stateClass = state ? ` ${state}` : '';
-    const priority = normalizePriority(t.priority);
-    const remindText = t.remindBefore > 0 ? `提前 ${t.remindBefore} 分钟` : '准时提醒';
-    return `
-      <div class="todo${stateClass}${t.done ? ' done' : ''}" data-todo="${escapeHtml(t.id)}">
-        <button class="todo-check" data-toggle="${escapeHtml(t.id)}" title="切换完成">${t.done ? '✓' : ''}</button>
+  } else {
+    container.innerHTML = list.map((t) => {
+      const state = dueState(t);
+      const stateClass = state ? ` ${state}` : '';
+      const priority = normalizePriority(t.priority);
+      const remindText = t.remindBefore > 0 ? `提前 ${t.remindBefore} 分钟` : '准时提醒';
+      const selected = selectedTodoIds.has(t.id);
+      const noteLine = t.note ? `<div class="todo-note" title="${escapeHtml(t.note)}">${escapeHtml(t.note)}</div>` : '';
+      return `
+      <div class="todo${stateClass}${t.done ? ' done' : ''}${selected ? ' selected' : ''}" data-todo="${escapeHtml(t.id)}">
+        <input type="checkbox" class="todo-select" data-select-todo="${escapeHtml(t.id)}" ${selected ? 'checked' : ''} title="勾选该待办（仅选择，不改状态）" />
         <div class="todo-body">
-          <div class="todo-title">${escapeHtml(t.title)}</div>
-          ${t.note ? `<div class="todo-note">${escapeHtml(t.note)}</div>` : ''}
+          <div class="todo-title" title="${escapeHtml(t.title)}">${escapeHtml(t.title)}</div>
+          ${noteLine}
           <div class="todo-meta">
             <span class="priority-tag p-${priority}">${PRIORITY_LABEL[priority]}</span>
             <span class="todo-due">🕐 ${formatDue(t.due)}${t.due != null && !t.done ? ' · ' + timeLeftText(t) : ''}</span>
             ${t.due != null ? `<span class="remind-tag">${remindText}</span>` : ''}
+            ${t.done ? '<span class="done-tag">✓ 已完成</span>' : ''}
           </div>
         </div>
-        <div class="todo-actions">
-          <button class="icon-btn" data-edit-todo="${escapeHtml(t.id)}" title="编辑">✏️</button>
-          <button class="icon-btn danger" data-del-todo="${escapeHtml(t.id)}" title="删除">🗑️</button>
-        </div>
+        <button class="todo-detail-btn" data-detail="${escapeHtml(t.id)}" title="查看详情">详情 ›</button>
       </div>`;
-  }).join('');
+    }).join('');
+  }
+  updateTodoToolbar();
 }
 
 function updateBadge() {
@@ -228,6 +252,7 @@ document.querySelectorAll('.filter').forEach((btn) => {
     document.querySelectorAll('.filter').forEach((b) => b.classList.remove('active'));
     btn.classList.add('active');
     todoFilter = btn.dataset.filter;
+    selectedTodoIds.clear(); // 切换筛选时清空勾选，避免误删其他分页的待办
     renderTodos();
   });
 });
@@ -530,13 +555,13 @@ function openTodoModal(todo) {
 }
 
 $('saveTodoBtn').addEventListener('click', () => {
-  const title = $('todoTitle').value.trim();
+  const title = $('todoTitle').value.trim().slice(0, 20);
   if (!title) { toast('请输入待办标题'); return; }
   const dueVal = $('todoDue').value;
   const due = dueVal ? new Date(dueVal).getTime() : null;
   const data = {
     title,
-    note: $('todoNote').value.trim(),
+    note: $('todoNote').value.trim().slice(0, 500),
     due,
     priority: normalizePriority($('todoPriority').value),
     remindBefore: Number($('todoRemind').value),
@@ -560,27 +585,118 @@ $('saveTodoBtn').addEventListener('click', () => {
   closeModal('todoModal');
 });
 
+// 点击待办右下角"详情"按钮打开详情弹窗
 $('todos').addEventListener('click', (e) => {
-  const toggle = e.target.closest('[data-toggle]');
-  if (toggle) {
-    const t = store.todos.find((x) => x.id === toggle.dataset.toggle);
-    if (t) { t.done = !t.done; save(); renderTodos(); updateBadge(); }
-    return;
+  const btn = e.target.closest('[data-detail]');
+  if (!btn) return;
+  openTodoDetail(btn.dataset.detail);
+});
+
+function openTodoDetail(id) {
+  const t = store.todos.find((x) => x.id === id);
+  if (!t) return;
+  detailTodoId = id;
+  const priority = normalizePriority(t.priority);
+  const dueText = t.due != null ? formatDue(t.due) : '无截止时间';
+  const remindText = t.remindBefore > 0 ? `提前 ${t.remindBefore} 分钟` : '准时提醒';
+  $('detailModalTitle').textContent = t.done ? '待办详情（已完成）' : '待办详情';
+  $('detailTitle').textContent = t.title;
+  $('detailTitle').title = t.title;
+  $('detailNote').textContent = t.note || '（无备注）';
+  $('detailNote').title = t.note || '';
+  $('detailDue').textContent = dueText;
+  $('detailDue').title = dueText;
+  $('detailPriority').textContent = PRIORITY_LABEL[priority];
+  $('detailRemind').textContent = remindText;
+  const finishBtn = $('detailFinishBtn');
+  finishBtn.disabled = !!t.done;
+  finishBtn.textContent = t.done ? '✓ 已办结' : '✓ 办结';
+  openModal('todoDetailModal');
+}
+
+// 详情弹窗 · 编辑：打开编辑弹窗，保存后自动关闭详情
+$('detailEditBtn').addEventListener('click', () => {
+  const t = store.todos.find((x) => x.id === detailTodoId);
+  if (!t) return;
+  closeModal('todoDetailModal');
+  openTodoModal(t);
+});
+
+// 详情弹窗 · 办结：将该待办设为已完成
+$('detailFinishBtn').addEventListener('click', () => {
+  const t = store.todos.find((x) => x.id === detailTodoId);
+  if (t && !t.done) {
+    t.done = true;
+    t.reminded = true;
+    selectedTodoIds.delete(t.id);
+    save(); renderTodos(); updateBadge();
+    toast('✅ 已办结');
   }
-  const edit = e.target.closest('[data-edit-todo]');
-  if (edit) {
-    const t = store.todos.find((x) => x.id === edit.dataset.editTodo);
-    if (t) openTodoModal(t);
-    return;
+  closeModal('todoDetailModal');
+});
+
+// 复选框勾选：仅维护选择集，绝不改变待办状态
+$('todos').addEventListener('change', (e) => {
+  const box = e.target.closest('[data-select-todo]');
+  if (!box) return;
+  const id = box.dataset.selectTodo;
+  if (box.checked) selectedTodoIds.add(id);
+  else selectedTodoIds.delete(id);
+  const row = box.closest('.todo');
+  if (row) row.classList.toggle('selected', box.checked);
+  updateTodoToolbar();
+});
+
+// 全选 / 取消全选当前筛选下的待办（同样只影响选择集）
+$('selectAllTodo').addEventListener('change', (e) => {
+  const checked = e.target.checked;
+  for (const id of visibleTodoIds) {
+    if (checked) selectedTodoIds.add(id);
+    else selectedTodoIds.delete(id);
   }
-  const del = e.target.closest('[data-del-todo]');
-  if (del) {
-    const id = del.dataset.delTodo;
-    askConfirm('确定删除这条待办吗？', () => {
-      store.todos = store.todos.filter((x) => x.id !== id);
-      save(); renderTodos(); updateBadge();
-    });
+  document.querySelectorAll('[data-select-todo]').forEach((box) => {
+    box.checked = checked;
+    const row = box.closest('.todo');
+    if (row) row.classList.toggle('selected', checked);
+  });
+  updateTodoToolbar();
+});
+
+// 操作栏 · 办结：将选中的待办状态设为已完成
+$('finishSelectedBtn').addEventListener('click', () => {
+  const n = selectedTodoIds.size;
+  if (n === 0) { toast('请先勾选要办结的待办'); return; }
+  let done = 0;
+  for (const t of store.todos) {
+    if (selectedTodoIds.has(t.id) && !t.done) {
+      t.done = true;
+      t.reminded = true; // 办结后不再提醒
+      done++;
+    }
   }
+  selectedTodoIds.clear();
+  save(); renderTodos(); updateBadge();
+  toast(done > 0 ? `✅ 已办结 ${done} 条待办` : '选中的待办均已完成');
+});
+
+// 操作栏 · 编辑：仅对单条选中项生效
+$('editSelectedBtn').addEventListener('click', () => {
+  if (selectedTodoIds.size !== 1) { toast('请仅勾选一条待办进行编辑'); return; }
+  const id = [...selectedTodoIds][0];
+  const t = store.todos.find((x) => x.id === id);
+  if (t) openTodoModal(t);
+});
+
+// 操作栏 · 删除：删除所有已勾选的待办
+$('deleteSelectedBtn').addEventListener('click', () => {
+  const n = selectedTodoIds.size;
+  if (n === 0) { toast('请先勾选要删除的待办'); return; }
+  askConfirm(`确定删除选中的 ${n} 条待办吗？此操作不可撤销。`, () => {
+    store.todos = store.todos.filter((t) => !selectedTodoIds.has(t.id));
+    selectedTodoIds.clear();
+    save(); renderTodos(); updateBadge();
+    toast(`已删除 ${n} 条待办`);
+  });
 });
 
 $('confirmOkBtn').addEventListener('click', () => {
