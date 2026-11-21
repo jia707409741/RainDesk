@@ -228,7 +228,18 @@ function renderAll() {
 
 // ---------- 弹窗控制 ----------
 function openModal(id) { $(id).classList.remove('hidden'); }
-function closeModal(id) { $(id).classList.add('hidden'); }
+function closeModal(id) {
+  $(id).classList.add('hidden');
+  // 关闭设置弹窗时若仍在录制快捷键，取消录制并恢复原快捷键注册
+  if (id === 'settingsModal' && recordingHotkey) {
+    const s = store.settings || {};
+    invoke('set_shortcuts', {
+      toggle: s.toggleShortcut || 'Ctrl+Shift+R',
+      newTodo: s.newTodoShortcut || 'Ctrl+Shift+T',
+    }).catch(() => {});
+    stopRecording();
+  }
+}
 
 function askConfirm(text, action) {
   $('confirmText').textContent = text;
@@ -237,14 +248,15 @@ function askConfirm(text, action) {
 }
 
 // ---------- 事件：导航 ----------
+function switchView(view) {
+  document.querySelectorAll('.nav-item').forEach((b) => b.classList.toggle('active', b.dataset.view === view));
+  currentView = view;
+  $('view-launcher').classList.toggle('hidden', currentView !== 'launcher');
+  $('view-todos').classList.toggle('hidden', currentView !== 'todos');
+}
+
 document.querySelectorAll('.nav-item').forEach((btn) => {
-  btn.addEventListener('click', () => {
-    document.querySelectorAll('.nav-item').forEach((b) => b.classList.remove('active'));
-    btn.classList.add('active');
-    currentView = btn.dataset.view;
-    $('view-launcher').classList.toggle('hidden', currentView !== 'launcher');
-    $('view-todos').classList.toggle('hidden', currentView !== 'todos');
-  });
+  btn.addEventListener('click', () => switchView(btn.dataset.view));
 });
 
 document.querySelectorAll('.filter').forEach((btn) => {
@@ -711,12 +723,46 @@ $('openDataDir').addEventListener('click', () => {
 });
 
 // ---------- 设置 ----------
+function currentTheme() {
+  return store.settings?.theme === 'light' ? 'light' : 'dark';
+}
+
+// 应用主题到界面，并同步两个切换按钮的显示
+function applyTheme() {
+  const theme = currentTheme();
+  const light = theme === 'light';
+  document.body.classList.toggle('theme-light', light);
+  // 标题栏按钮：显示当前主题对应的图标与提示
+  const top = $('themeToggleTop');
+  if (top) {
+    top.textContent = light ? '☀️' : '🌙';
+    top.title = light ? '当前：日间主题（点击切换夜间）' : '当前：夜间主题（点击切换日间）';
+  }
+  // 设置面板按钮
+  const setIcon = $('setThemeIcon');
+  const setText = $('setThemeText');
+  const setLabel = $('themeLabel');
+  if (setIcon) setIcon.textContent = light ? '☀️' : '🌙';
+  if (setText) setText.textContent = light ? '日间' : '夜间';
+  if (setLabel) setLabel.textContent = light ? '日间模式' : '夜间模式';
+}
+
+function toggleTheme() {
+  const next = currentTheme() === 'light' ? 'dark' : 'light';
+  updateSettings({ theme: next });
+  toast(next === 'light' ? '☀️ 已切换到日间主题' : '🌙 已切换到夜间主题');
+}
+
 function applySettings() {
   const s = store.settings || { iconSize: 60, showNames: true };
   // 限制范围
   const size = Math.min(88, Math.max(44, Number(s.iconSize) || 60));
   document.documentElement.style.setProperty('--icon-size', size + 'px');
   document.body.classList.toggle('hide-names', s.showNames === false);
+  applyTheme();
+  // 启动时把按钮文字同步为真实注册的快捷键，
+  // 否则界面一直显示 HTML 里的默认值，用户按显示值会以为快捷键失效。
+  updateHotkeyButtons();
 }
 
 function loadSettingsUI() {
@@ -724,6 +770,8 @@ function loadSettingsUI() {
   $('setIconSize').value = Math.min(88, Math.max(44, Number(s.iconSize) || 60));
   $('iconSizeLabel').textContent = `${$('setIconSize').value} px`;
   $('setShowNames').checked = s.showNames !== false;
+  applyTheme();
+  updateHotkeyButtons();
   // 开机自启动状态从系统读取
   invoke('get_autostart')
     .then((on) => { $('setAutostart').checked = !!on; })
@@ -792,7 +840,7 @@ $('resetDataDirBtn').addEventListener('click', () => {
 });
 
 function updateSettings(patch) {
-  store.settings = { iconSize: 60, showNames: true, ...(store.settings || {}), ...patch };
+  store.settings = { iconSize: 60, showNames: true, theme: 'dark', ...(store.settings || {}), ...patch };
   applySettings();
   save();
 }
@@ -801,6 +849,140 @@ $('openSettings').addEventListener('click', () => {
   loadSettingsUI();
   openModal('settingsModal');
 });
+
+// 主题切换：标题栏右上角 + 设置面板内，两处共用同一逻辑
+$('themeToggleTop')?.addEventListener('click', toggleTheme);
+$('setTheme')?.addEventListener('click', toggleTheme);
+
+// ---------- 快捷键设置 ----------
+// 把 KeyboardEvent 转成 global-hotkey 可解析的字符串，如 "Ctrl+Shift+R"
+const DEFAULT_TOGGLE_HOTKEY = 'Ctrl+Shift+R';
+const DEFAULT_NEW_TODO_HOTKEY = 'Ctrl+Shift+T';
+
+// 记录当前正在录制哪个快捷键：'toggle' | 'newTodo' | null
+let recordingHotkey = null;
+
+function formatHotkey(str) {
+  return (str || '').split('+').map((s) => s.trim()).filter(Boolean).join(' + ');
+}
+
+function updateHotkeyButtons() {
+  const s = store.settings || {};
+  const t = $('hotkeyToggle');
+  const n = $('hotkeyNewTodo');
+  if (t && recordingHotkey !== 'toggle') t.textContent = formatHotkey(s.toggleShortcut || DEFAULT_TOGGLE_HOTKEY);
+  if (n && recordingHotkey !== 'newTodo') n.textContent = formatHotkey(s.newTodoShortcut || DEFAULT_NEW_TODO_HOTKEY);
+}
+
+// 把按键编码映射为解析器认可的名称
+function codeToKeyName(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3);      // KeyR -> R
+  if (/^Digit[0-9]$/.test(code)) return code.slice(5);    // Digit1 -> 1
+  if (/^F([1-9]|1[0-9]|2[0-4])$/.test(code)) return code;  // F1..F24
+  const map = {
+    Space: 'Space', Enter: 'Enter', Tab: 'Tab', Backspace: 'Backspace',
+    Delete: 'Delete', Insert: 'Insert', Home: 'Home', End: 'End',
+    PageUp: 'PageUp', PageDown: 'PageDown',
+    ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right',
+    Minus: '-', Equal: '=', Comma: ',', Period: '.', Slash: '/',
+    Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']',
+    Backslash: '\\', Backquote: '`',
+  };
+  return map[code] || null;
+}
+
+// 从按键事件构建热键字符串；返回 null 表示只有修饰键/不支持
+function buildHotkey(e) {
+  const mods = [];
+  if (e.ctrlKey) mods.push('Ctrl');
+  if (e.altKey) mods.push('Alt');
+  if (e.shiftKey) mods.push('Shift');
+  if (e.metaKey) mods.push('Super');
+  const key = codeToKeyName(e.code);
+  if (!key) return null;               // 仅按了修饰键，继续等待
+  if (mods.length === 0) return { error: '必须包含 Ctrl / Alt / Shift / Win 修饰键' };
+  return { hotkey: [...mods, key].join('+') };
+}
+
+function startRecording(which) {
+  if (recordingHotkey) return;
+  recordingHotkey = which;
+  const btn = which === 'toggle' ? $('hotkeyToggle') : $('hotkeyNewTodo');
+  btn.classList.add('recording');
+  btn.textContent = '请按下组合键…';
+  // 录制期间先注销全局快捷键，避免旧组合触发主面板显示/隐藏
+  invoke('suspend_shortcuts').catch(() => {});
+}
+
+function stopRecording() {
+  recordingHotkey = null;
+  $('hotkeyToggle').classList.remove('recording');
+  $('hotkeyNewTodo').classList.remove('recording');
+  updateHotkeyButtons();
+}
+
+async function applyHotkey(which, hotkey) {
+  const s = store.settings || {};
+  const toggle = which === 'toggle' ? hotkey : (s.toggleShortcut || DEFAULT_TOGGLE_HOTKEY);
+  const newTodo = which === 'newTodo' ? hotkey : (s.newTodoShortcut || DEFAULT_NEW_TODO_HOTKEY);
+  if (toggle === newTodo) {
+    toast('两个快捷键不能相同');
+    // 重新注册回原快捷键
+    invoke('set_shortcuts', {
+      toggle: s.toggleShortcut || DEFAULT_TOGGLE_HOTKEY,
+      newTodo: s.newTodoShortcut || DEFAULT_NEW_TODO_HOTKEY,
+    }).catch(() => {});
+    return false;
+  }
+  try {
+    await invoke('set_shortcuts', { toggle, newTodo });
+    store.settings = { ...s, toggleShortcut: toggle, newTodoShortcut: newTodo };
+    updateHotkeyButtons();
+    toast(`快捷键已更新：${formatHotkey(hotkey)}`);
+    return true;
+  } catch (e) {
+    toast('设置快捷键失败：' + e);
+    // 后端已回滚到旧快捷键
+    return false;
+  }
+}
+
+$('hotkeyToggle')?.addEventListener('click', () => startRecording('toggle'));
+$('hotkeyNewTodo')?.addEventListener('click', () => startRecording('newTodo'));
+
+$('resetHotkeysBtn')?.addEventListener('click', async () => {
+  const ok = await applyHotkey('toggle', DEFAULT_TOGGLE_HOTKEY);
+  if (ok) {
+    await applyHotkey('newTodo', DEFAULT_NEW_TODO_HOTKEY);
+    updateHotkeyButtons();
+    toast('已恢复默认快捷键');
+  }
+});
+
+// 录制态键盘监听（捕获阶段，优先于其他处理）
+document.addEventListener('keydown', async (e) => {
+  if (!recordingHotkey) return;
+  e.preventDefault();
+  e.stopPropagation();
+  if (e.key === 'Escape') {
+    // 取消录制：恢复原快捷键注册
+    const s = store.settings || {};
+    invoke('set_shortcuts', {
+      toggle: s.toggleShortcut || DEFAULT_TOGGLE_HOTKEY,
+      newTodo: s.newTodoShortcut || DEFAULT_NEW_TODO_HOTKEY,
+    }).catch(() => {});
+    stopRecording();
+    toast('已取消快捷键录制');
+    return;
+  }
+  const r = buildHotkey(e);
+  if (!r) return;               // 仅修饰键，继续等待
+  if (r.error) { toast(r.error); return; }
+  const which = recordingHotkey;
+  stopRecording();
+  await applyHotkey(which, r.hotkey);
+  updateHotkeyButtons();
+}, true);
 
 $('setIconSize').addEventListener('input', (e) => {
   const size = Number(e.target.value);
@@ -901,6 +1083,13 @@ listen('todo-due', (event) => {
   renderTodos();
   updateBadge();
   toast(`⏰ 有 ${event.payload} 条待办到期了！`);
+});
+
+// 全局快捷键 Ctrl+Shift+T：切到待办视图并打开新建待办弹窗
+listen('quick-new-todo', () => {
+  switchView('todos');
+  openTodoModal(null);
+  $('todoTitle')?.focus();
 });
 
 // ---------- 初始化 ----------

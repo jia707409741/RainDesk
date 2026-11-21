@@ -22,6 +22,7 @@
     <div class="titlebar" data-tauri-drag-region>
       <div class="titlebar-brand" data-tauri-drag-region>🌧️ RainDesk</div>
       <div class="titlebar-controls">
+        <button class="win-btn theme-toggle" id="themeToggleTop" title="切换主题">🌙</button>
         <button class="win-btn" id="winMin" title="最小化">─</button>
         <button class="win-btn" id="winMax" title="最大化">□</button>
         <button class="win-btn win-close" id="winClose" title="关闭">✕</button>
@@ -43,7 +44,7 @@
         <div class="sidebar-footer">
           <button class="ghost-btn" id="openSettings" title="设置">⚙️ 设置</button>
           <button class="ghost-btn" id="openDataDir" title="打开数据目录">📂 数据目录</button>
-          <div class="version">v0.1.0</div>
+          <div class="version">v0.1.2</div>
         </div>
       </aside>
 
@@ -106,6 +107,7 @@
   <!-- 分组编辑弹窗 -->
   <div class="modal hidden" id="groupModal">
     <div class="modal-card">
+      <button class="modal-close" data-close="groupModal" title="关闭">✕</button>
       <h2 id="groupModalTitle">新建分组</h2>
       <label>分组名称<input type="text" id="groupName" placeholder="例如：开发工具" /></label>
       <label>图标（emoji）<input type="text" id="groupIcon" placeholder="🚀" maxlength="4" /></label>
@@ -119,6 +121,7 @@
   <!-- 快捷方式编辑弹窗 -->
   <div class="modal hidden" id="shortcutModal">
     <div class="modal-card">
+      <button class="modal-close" data-close="shortcutModal" title="关闭">✕</button>
       <h2 id="shortcutModalTitle">添加快捷方式</h2>
       <label>名称<input type="text" id="scName" placeholder="例如：VS Code" /></label>
       <label>类型
@@ -153,6 +156,7 @@
   <!-- 待办编辑弹窗 -->
   <div class="modal hidden" id="todoModal">
     <div class="modal-card">
+      <button class="modal-close" data-close="todoModal" title="关闭">✕</button>
       <h2 id="todoModalTitle">新建待办</h2>
       <label>标题<input type="text" id="todoTitle" placeholder="要做什么？" maxlength="20" /></label>
       <label>备注<textarea id="todoNote" rows="2" placeholder="补充说明（可选）" maxlength="500"></textarea></label>
@@ -188,6 +192,7 @@
   <!-- 待办详情弹窗 -->
   <div class="modal hidden" id="todoDetailModal">
     <div class="modal-card">
+      <button class="modal-close" data-close="todoDetailModal" title="关闭">✕</button>
       <h2 id="detailModalTitle">待办详情</h2>
       <div class="detail-field">
         <div class="detail-label">标题</div>
@@ -220,6 +225,7 @@
   <!-- 确认弹窗 -->
   <div class="modal hidden" id="confirmModal">
     <div class="modal-card modal-sm">
+      <button class="modal-close" data-close="confirmModal" title="关闭">✕</button>
       <h2>确认操作</h2>
       <p id="confirmText" class="confirm-text"></p>
       <div class="modal-actions">
@@ -232,50 +238,83 @@
   <!-- 设置弹窗 -->
   <div class="modal hidden" id="settingsModal">
     <div class="modal-card settings-card">
-      <h2>⚙️ 设置</h2>
-      <div class="settings-group">
-        <h3>启动</h3>
-        <label class="setting-row">
-          <span class="setting-label">开机自动启动
-            <small>登录 Windows 后自动运行 RainDesk</small>
-          </span>
-          <input type="checkbox" id="setAutostart" class="switch" />
-        </label>
+      <div class="settings-header">
+        <h2>⚙️ 设置</h2>
+        <button class="modal-close" data-close="settingsModal" title="关闭">✕</button>
       </div>
-      <div class="settings-group">
-        <h3>外观个性化</h3>
-        <label class="setting-row">
-          <span class="setting-label">图标大小
-            <small id="iconSizeLabel">60 px</small>
-          </span>
-          <input type="range" id="setIconSize" min="44" max="88" step="2" value="60" />
-        </label>
-        <label class="setting-row">
-          <span class="setting-label">显示图标名称</span>
-          <input type="checkbox" id="setShowNames" class="switch" checked />
-        </label>
-        <div class="setting-row">
-          <span class="setting-label">预览</span>
-          <div class="icon-preview" id="iconPreview">
-            <div class="sc-icon-box c-blue">📁</div>
-            <span class="preview-name">文件资源管理器</span>
+      <div class="settings-body">
+        <div class="settings-group">
+          <h3>快捷键</h3>
+          <div class="setting-row">
+            <span class="setting-label">显示 / 隐藏主面板
+              <small>在任何界面唤出或收起 RainDesk</small>
+            </span>
+            <button class="hotkey-input" id="hotkeyToggle" title="点击后按下新的组合键">Ctrl + Shift + R</button>
+          </div>
+          <div class="setting-row">
+            <span class="setting-label">快速新建待办
+              <small>唤出主面板并直接打开新建待办</small>
+            </span>
+            <button class="hotkey-input" id="hotkeyNewTodo" title="点击后按下新的组合键">Ctrl + Shift + T</button>
+          </div>
+          <div class="data-dir-actions">
+            <button class="btn btn-ghost btn-sm" id="resetHotkeysBtn">恢复默认快捷键</button>
+          </div>
+          <p class="setting-hint">点击快捷键按钮后按下新的组合键即可修改（必须包含 Ctrl / Alt / Shift / Win 之一），Esc 取消。修改立即生效。</p>
+        </div>
+        <div class="settings-group">
+          <h3>启动</h3>
+          <label class="setting-row">
+            <span class="setting-label">开机自动启动
+              <small>登录 Windows 后自动运行 RainDesk</small>
+            </span>
+            <input type="checkbox" id="setAutostart" class="switch" />
+          </label>
+        </div>
+        <div class="settings-group">
+          <h3>外观个性化</h3>
+          <label class="setting-row">
+            <span class="setting-label">主题
+              <small id="themeLabel">夜间模式</small>
+            </span>
+            <button class="theme-toggle-btn" id="setTheme" title="点击切换日间/夜间">
+              <span class="theme-toggle-icon" id="setThemeIcon">🌙</span>
+              <span class="theme-toggle-text" id="setThemeText">夜间</span>
+            </button>
+          </label>
+          <label class="setting-row">
+            <span class="setting-label">图标大小
+              <small id="iconSizeLabel">60 px</small>
+            </span>
+            <input type="range" id="setIconSize" min="44" max="88" step="2" value="60" />
+          </label>
+          <label class="setting-row">
+            <span class="setting-label">显示图标名称</span>
+            <input type="checkbox" id="setShowNames" class="switch" checked />
+          </label>
+          <div class="setting-row">
+            <span class="setting-label">预览</span>
+            <div class="icon-preview" id="iconPreview">
+              <div class="sc-icon-box c-blue">📁</div>
+              <span class="preview-name">文件资源管理器</span>
+            </div>
           </div>
         </div>
-      </div>
-      <div class="settings-group">
-        <h3>数据目录</h3>
-        <div class="data-dir-row">
-          <input type="text" id="dataDirInput" placeholder="正在读取…" spellcheck="false" />
-          <button class="btn btn-secondary btn-sm" id="pickDataDirBtn">浏览…</button>
+        <div class="settings-group">
+          <h3>数据目录</h3>
+          <div class="data-dir-row">
+            <input type="text" id="dataDirInput" placeholder="正在读取…" spellcheck="false" />
+            <button class="btn btn-secondary btn-sm" id="pickDataDirBtn">浏览…</button>
+          </div>
+          <div class="data-dir-actions">
+            <button class="btn btn-primary btn-sm" id="applyDataDirBtn">应用</button>
+            <button class="btn btn-secondary btn-sm" id="openDataDirBtn">打开目录</button>
+            <button class="btn btn-ghost btn-sm" id="resetDataDirBtn">恢复默认</button>
+          </div>
+          <p class="setting-hint" id="dataDirHint">切换到空目录会复制当前数据（原文件保留备份）；选择已有 store.json 的目录则直接使用其中数据。</p>
         </div>
-        <div class="data-dir-actions">
-          <button class="btn btn-primary btn-sm" id="applyDataDirBtn">应用</button>
-          <button class="btn btn-secondary btn-sm" id="openDataDirBtn">打开目录</button>
-          <button class="btn btn-ghost btn-sm" id="resetDataDirBtn">恢复默认</button>
-        </div>
-        <p class="setting-hint" id="dataDirHint">切换到空目录会复制当前数据（原文件保留备份）；选择已有 store.json 的目录则直接使用其中数据。</p>
       </div>
-      <div class="modal-actions">
+      <div class="settings-footer">
         <button class="btn btn-primary" data-close="settingsModal">完成</button>
       </div>
     </div>

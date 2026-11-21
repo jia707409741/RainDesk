@@ -57,6 +57,15 @@ pub struct Settings {
     pub icon_size: u32,
     /// 是否显示快捷方式名称
     pub show_names: bool,
+    /// 界面主题：dark（夜间）| light（日间），旧数据缺省为 dark
+    #[serde(default = "default_theme")]
+    pub theme: String,
+    /// 显示 / 隐藏主面板的全局快捷键，空字符串表示未设置
+    #[serde(default = "default_toggle_shortcut")]
+    pub toggle_shortcut: String,
+    /// 快速新建待办的全局快捷键
+    #[serde(default = "default_new_todo_shortcut")]
+    pub new_todo_shortcut: String,
 }
 
 impl Default for Settings {
@@ -64,8 +73,23 @@ impl Default for Settings {
         Settings {
             icon_size: 60,
             show_names: true,
+            theme: default_theme(),
+            toggle_shortcut: default_toggle_shortcut(),
+            new_todo_shortcut: default_new_todo_shortcut(),
         }
     }
+}
+
+fn default_theme() -> String {
+    "dark".into()
+}
+
+fn default_toggle_shortcut() -> String {
+    "Ctrl+Shift+R".into()
+}
+
+fn default_new_todo_shortcut() -> String {
+    "Ctrl+Shift+T".into()
 }
 
 /// 应用持久化数据

@@ -393,6 +393,57 @@ pub fn set_autostart(enabled: bool) -> Result<(), String> {
     crate::autostart::set_enabled(enabled)
 }
 
+/// 更新全局快捷键：先校验并尝试注册，成功后写入设置；任一失败则回滚到旧快捷键并返回错误。
+#[tauri::command]
+pub fn set_shortcuts(
+    toggle: String,
+    new_todo: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let toggle = toggle.trim().to_string();
+    let new_todo = new_todo.trim().to_string();
+    if toggle.is_empty() || new_todo.is_empty() {
+        return Err("快捷键不能为空".into());
+    }
+    if toggle == new_todo {
+        return Err("两个快捷键不能相同".into());
+    }
+
+    // 记录旧值用于回滚
+    let (old_toggle, old_new_todo) = {
+        let guard = state.store.lock().map_err(|e| e.to_string())?;
+        (
+            guard.settings.toggle_shortcut.clone(),
+            guard.settings.new_todo_shortcut.clone(),
+        )
+    };
+
+    let errors = crate::apply_global_shortcuts(&app, &toggle, &new_todo);
+    if !errors.is_empty() {
+        // 有注册失败：回滚到旧快捷键，保持原有可用状态
+        let _ = crate::apply_global_shortcuts(&app, &old_toggle, &old_new_todo);
+        return Err(errors.join("；"));
+    }
+
+    // 注册成功：写入设置并持久化
+    {
+        let mut guard = state.store.lock().map_err(|e| e.to_string())?;
+        guard.settings.toggle_shortcut = toggle;
+        guard.settings.new_todo_shortcut = new_todo;
+    }
+    state.persist()
+}
+
+/// 暂停所有全局快捷键（录制新快捷键时调用，避免按下旧组合键触发原有行为）。
+#[tauri::command]
+pub fn suspend_shortcuts(app: tauri::AppHandle) -> Result<(), String> {
+    use tauri_plugin_global_shortcut::GlobalShortcutExt;
+    app.global_shortcut()
+        .unregister_all()
+        .map_err(|e| e.to_string())
+}
+
 /// 触发一次系统通知（使用 Tauri notification 插件的 JS API 亦可，这里预留给 Rust 侧调用）
 #[tauri::command]
 pub fn noop() -> Result<(), String> {

@@ -9,6 +9,7 @@ use std::sync::atomic::Ordering;
 use std::time::Duration;
 
 use tauri::{Emitter, Listener, Manager};
+use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
 use commands::{hide_reminder, show_reminder};
 use store::AppState;
@@ -78,11 +79,90 @@ fn start_reminder_engine(app: tauri::AppHandle) {
     });
 }
 
+/// 注册全局快捷键。
+/// - toggle：显示 / 隐藏主面板
+/// - new_todo：唤出主面板并直接打开「新建待办」
+/// 返回注册过程中遇到的错误描述（空列表表示全部成功）。
+/// 调用前应先 `unregister_all`，避免重复注册。
+pub fn apply_global_shortcuts(
+    app: &tauri::AppHandle,
+    toggle: &str,
+    new_todo: &str,
+) -> Vec<String> {
+    let mut errors = Vec::new();
+    let gs = app.global_shortcut();
+    let _ = gs.unregister_all();
+
+    if !toggle.trim().is_empty() {
+        if let Err(e) = gs.on_shortcut(toggle, |app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            if let Some(win) = app.get_webview_window("main") {
+                // 最小化窗口在 Windows 上 is_visible() 仍为 true，
+                // 直接 hide 会让用户以为快捷键没反应；应先还原。
+                let minimized = win.is_minimized().unwrap_or(false);
+                let visible = win.is_visible().unwrap_or(false);
+                if minimized || !visible {
+                    let _ = win.unminimize();
+                    let _ = win.show();
+                    let _ = win.set_focus();
+                } else {
+                    let _ = win.hide();
+                }
+            }
+        }) {
+            errors.push(format!("主面板快捷键「{toggle}」注册失败：{e}"));
+        } else {
+            println!("[RainDesk] 快捷键 {toggle} 注册成功（显示/隐藏主面板）");
+        }
+    }
+
+    if !new_todo.trim().is_empty() {
+        if let Err(e) = gs.on_shortcut(new_todo, |app, _shortcut, event| {
+            if event.state != ShortcutState::Pressed {
+                return;
+            }
+            if let Some(win) = app.get_webview_window("main") {
+                let _ = win.show();
+                let _ = win.unminimize();
+                let _ = win.set_focus();
+            }
+            let _ = app.emit("quick-new-todo", ());
+        }) {
+            errors.push(format!("新建待办快捷键「{new_todo}」注册失败：{e}"));
+        } else {
+            println!("[RainDesk] 快捷键 {new_todo} 注册成功（快速新建待办）");
+        }
+    }
+
+    errors
+}
+
+/// 启动时按当前设置注册快捷键
+fn register_global_shortcuts(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let (toggle, new_todo) = {
+        let state = app
+            .try_state::<AppState>()
+            .ok_or("AppState 未初始化")?;
+        let guard = state.store.lock().map_err(|e| e.to_string())?;
+        (
+            guard.settings.toggle_shortcut.clone(),
+            guard.settings.new_todo_shortcut.clone(),
+        )
+    };
+    for err in apply_global_shortcuts(app, &toggle, &new_todo) {
+        eprintln!("[RainDesk] {err}");
+    }
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .setup(|app| {
             // 数据目录：由默认目录中的 location.json 指向，未配置时使用默认应用数据目录
             let data_path = config::resolve_data_path(app.handle());
@@ -97,6 +177,9 @@ pub fn run() {
                 commands::REMINDER_WIN_CREATED.store(false, Ordering::SeqCst);
                 let _ = hide_reminder(app_handle.clone());
             });
+
+            // 注册全局快捷键：显示/隐藏主面板、快速新建待办
+            register_global_shortcuts(app.handle())?;
 
             Ok(())
         })
@@ -115,6 +198,8 @@ pub fn run() {
             commands::shortcuts_from_paths,
             commands::get_autostart,
             commands::set_autostart,
+            commands::set_shortcuts,
+            commands::suspend_shortcuts,
             commands::noop,
         ])
         .run(tauri::generate_context!())
