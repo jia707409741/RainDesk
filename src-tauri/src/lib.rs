@@ -8,6 +8,8 @@ mod store;
 use std::sync::atomic::Ordering;
 use std::time::Duration;
 
+use tauri::menu::MenuBuilder;
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{Emitter, Listener, Manager};
 use tauri_plugin_global_shortcut::{GlobalShortcutExt, ShortcutState};
 
@@ -79,6 +81,60 @@ fn start_reminder_engine(app: tauri::AppHandle) {
     });
 }
 
+/// 显示 / 隐藏主面板（托盘与全局快捷键共用）。
+/// 最小化状态下优先还原，避免用户误以为快捷键失效。
+fn toggle_main_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let minimized = win.is_minimized().unwrap_or(false);
+        let visible = win.is_visible().unwrap_or(false);
+        if minimized || !visible {
+            let _ = win.unminimize();
+            let _ = win.show();
+            let _ = win.set_focus();
+        } else {
+            let _ = win.hide();
+        }
+    }
+}
+
+/// 创建系统托盘图标：左键显示/隐藏主面板，右键菜单可显示/隐藏或退出。
+fn setup_tray(app: &tauri::AppHandle) -> Result<(), Box<dyn std::error::Error>> {
+    let menu = MenuBuilder::new(app)
+        .text("tray-show", "显示 / 隐藏主面板")
+        .separator()
+        .text("tray-quit", "退出 RainDesk")
+        .build()?;
+
+    let tray = TrayIconBuilder::with_id("raindesk-main")
+        .icon(tauri::image::Image::from_bytes(include_bytes!(
+            "../icons/icon.png"
+        ))?)
+        .tooltip("RainDesk - 待办与快捷启动器")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "tray-show" => toggle_main_window(app),
+            "tray-quit" => app.exit(0),
+            _ => {}
+        })
+        .on_tray_icon_event(|tray, event| {
+            if let TrayIconEvent::Click {
+                button: MouseButton::Left,
+                button_state: MouseButtonState::Up,
+                ..
+            } = event
+            {
+                toggle_main_window(tray.app_handle());
+            }
+        })
+        .build(app)?;
+
+    // TrayIcon 是引用计数类型，最后一个实例被 drop 时图标会移除，
+    // 放进 managed state 使其随应用一直存活。
+    app.manage(tray);
+    Ok(())
+}
+
 /// 注册全局快捷键。
 /// - toggle：显示 / 隐藏主面板
 /// - new_todo：唤出主面板并直接打开「新建待办」
@@ -98,19 +154,7 @@ pub fn apply_global_shortcuts(
             if event.state != ShortcutState::Pressed {
                 return;
             }
-            if let Some(win) = app.get_webview_window("main") {
-                // 最小化窗口在 Windows 上 is_visible() 仍为 true，
-                // 直接 hide 会让用户以为快捷键没反应；应先还原。
-                let minimized = win.is_minimized().unwrap_or(false);
-                let visible = win.is_visible().unwrap_or(false);
-                if minimized || !visible {
-                    let _ = win.unminimize();
-                    let _ = win.show();
-                    let _ = win.set_focus();
-                } else {
-                    let _ = win.hide();
-                }
-            }
+            toggle_main_window(app);
         }) {
             errors.push(format!("主面板快捷键「{toggle}」注册失败：{e}"));
         } else {
@@ -177,6 +221,23 @@ pub fn run() {
                 commands::REMINDER_WIN_CREATED.store(false, Ordering::SeqCst);
                 let _ = hide_reminder(app_handle.clone());
             });
+
+            // 主面板点叉号/Alt+F4 时只隐藏窗口，进程继续常驻；
+            // 真正的退出走系统托盘右键菜单。
+            if let Some(main_win) = app.get_webview_window("main") {
+                let handle = app.handle().clone();
+                main_win.on_window_event(move |event| {
+                    if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                        api.prevent_close();
+                        if let Some(win) = handle.get_webview_window("main") {
+                            let _ = win.hide();
+                        }
+                    }
+                });
+            }
+
+            // 系统托盘图标（左键显示/隐藏，右键菜单退出）
+            setup_tray(app.handle())?;
 
             // 注册全局快捷键：显示/隐藏主面板、快速新建待办
             register_global_shortcuts(app.handle())?;
