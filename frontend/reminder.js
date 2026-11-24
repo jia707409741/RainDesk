@@ -21,7 +21,7 @@ function render(todo, count) {
   currentTodo = todo;
   $('todoTitle').textContent = todo.title;
   $('todoNote').textContent = todo.note || '';
-  $('dueText').textContent = todo.due != null ? `🕐 截止时间：${formatDue(todo.due)}` : '⏰ 该处理了';
+  $('dueText').textContent = todo.due != null ? `截止时间：${formatDue(todo.due)}` : '该处理了';
   $('extraCount').textContent = count > 1 ? `还有 ${count - 1} 条待办同时到期` : '到时间啦，快去处理';
 }
 

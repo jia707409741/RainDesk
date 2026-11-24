@@ -18,7 +18,7 @@ let dataDirDefault = ''; // 应用默认数据目录，用于“恢复默认”
 
 // 拖拽状态（纯鼠标事件：内部排序/跨组）
 let mouseDrag = null; // { type, id, groupId, startX, startY, active, plan, ghost, source }
-let suppressClick = false; // 拖拽结束后抑制一次 click，避免误启动
+let suppressClick = false; // 拖拽结束后抑制一次 click / dblclick，避免误启动
 // 文件拖入状态
 let fileDragActive = false;
 let dropTargetGroupId = null;
@@ -111,12 +111,12 @@ function timeLeftText(todo) {
 function renderGroups() {
   const container = $('groups');
   if (store.groups.length === 0) {
-    container.innerHTML = `<div class="empty"><span class="empty-icon">⚡</span>还没有分组，点击右上角「新建分组」开始吧</div>`;
+    container.innerHTML = `<div class="empty"><span class="empty-icon"><svg class="ico" style="font-size:1em"><use href="#i-grid"/></svg></span>还没有分组，点击右上角「新建分组」开始吧</div>`;
     return;
   }
   container.innerHTML = store.groups.map((g) => {
     const shortcuts = g.shortcuts.map((s) => `
-      <div class="shortcut" data-launch="${escapeHtml(s.id)}" data-sc="${escapeHtml(s.id)}" data-group="${escapeHtml(g.id)}" title="${escapeHtml(s.name)}">
+      <div class="shortcut" data-launch="${escapeHtml(s.id)}" data-sc="${escapeHtml(s.id)}" data-group="${escapeHtml(g.id)}" title="${escapeHtml(s.name)}（双击启动）">
         <button class="sc-del" data-del-sc="${escapeHtml(s.id)}" title="删除">×</button>
         <div class="sc-icon-box c-${escapeHtml(s.color)}">${scIconHtml(s)}</div>
         <div class="sc-name">${escapeHtml(s.name)}</div>
@@ -129,8 +129,8 @@ function renderGroups() {
           <span class="group-count">${g.shortcuts.length} 项</span>
           <span class="group-drag-handle" title="拖动排序">⠿</span>
           <div class="group-menu">
-            <button class="icon-btn" data-edit-group="${escapeHtml(g.id)}" title="编辑分组">✏️</button>
-            <button class="icon-btn danger" data-del-group="${escapeHtml(g.id)}" title="删除分组">🗑️</button>
+            <button class="icon-btn" data-edit-group="${escapeHtml(g.id)}" title="编辑分组"><svg class="ico"><use href="#i-pencil"/></svg></button>
+            <button class="icon-btn danger" data-del-group="${escapeHtml(g.id)}" title="删除分组"><svg class="ico"><use href="#i-trash"/></svg></button>
           </div>
         </div>
         <div class="shortcut-grid" data-drop-grid="${escapeHtml(g.id)}">
@@ -184,7 +184,7 @@ function renderTodos() {
   for (const id of selectedTodoIds) if (!existing.has(id)) selectedTodoIds.delete(id);
 
   if (list.length === 0) {
-    container.innerHTML = `<div class="empty"><span class="empty-icon">✅</span>这里空空如也，添加一个待办吧</div>`;
+    container.innerHTML = `<div class="empty"><span class="empty-icon"><svg class="ico" style="font-size:1em"><use href="#i-check-square"/></svg></span>这里空空如也，添加一个待办吧</div>`;
   } else {
     container.innerHTML = list.map((t) => {
       const state = dueState(t);
@@ -201,12 +201,12 @@ function renderTodos() {
           ${noteLine}
           <div class="todo-meta">
             <span class="priority-tag p-${priority}">${PRIORITY_LABEL[priority]}</span>
-            <span class="todo-due">🕐 ${formatDue(t.due)}${t.due != null && !t.done ? ' · ' + timeLeftText(t) : ''}</span>
+            <span class="todo-due"><svg class="ico"><use href="#i-clock"/></svg>${formatDue(t.due)}${t.due != null && !t.done ? ' · ' + timeLeftText(t) : ''}</span>
             ${t.due != null ? `<span class="remind-tag">${remindText}</span>` : ''}
             ${t.done ? '<span class="done-tag">✓ 已完成</span>' : ''}
           </div>
         </div>
-        <button class="todo-detail-btn" data-detail="${escapeHtml(t.id)}" title="查看详情">详情 ›</button>
+        <button class="todo-detail-btn" data-detail="${escapeHtml(t.id)}" title="查看详情">详情<svg class="ico"><use href="#i-chevron-right"/></svg></button>
       </div>`;
     }).join('');
   }
@@ -341,19 +341,23 @@ $('groups').addEventListener('click', (e) => {
     });
     return;
   }
+});
 
+// 双击启动快捷方式（单击只选中/不启动，与拖拽排序共存）
+$('groups').addEventListener('dblclick', (e) => {
+  if (suppressClick) return; // 拖拽刚结束，忽略这次双击
+  if (e.target.closest('button')) return; // 删除按钮等不触发启动
   const launch = e.target.closest('[data-launch]');
-  if (launch) {
-    const id = launch.dataset.launch;
-    let found = null;
-    for (const g of store.groups) {
-      found = g.shortcuts.find((s) => s.id === id);
-      if (found) break;
-    }
-    if (found) {
-      invoke('launch_shortcut', { shortcut: found })
-        .catch((err) => toast('启动失败：' + err));
-    }
+  if (!launch) return;
+  const id = launch.dataset.launch;
+  let found = null;
+  for (const g of store.groups) {
+    found = g.shortcuts.find((s) => s.id === id);
+    if (found) break;
+  }
+  if (found) {
+    invoke('launch_shortcut', { shortcut: found })
+      .catch((err) => toast('启动失败：' + err));
   }
 });
 
@@ -471,7 +475,7 @@ document.addEventListener('pointerup', () => {
   if (d.ghost) d.ghost.remove();
   clearDropHints();
   if (!d.active) return; // 只是点击，不执行移动
-  suppressClick = true;  // 抑制拖拽后的 click（避免误启动）
+  suppressClick = true;  // 抑制拖拽后的 click / dblclick（避免误启动）
   setTimeout(() => { suppressClick = false; }, 0);
   performDropWith(d);
 });
@@ -536,7 +540,7 @@ $('saveShortcutBtn').addEventListener('click', () => {
     name,
     kind: $('scKind').value,
     target,
-    icon: $('scIcon').value.trim() || '🔹',
+    icon: $('scIcon').value.trim() || '◇',
     color: $('scColor').value,
   };
   const group = store.groups.find((g) => g.id === editingShortcut.groupId);
@@ -622,7 +626,7 @@ function openTodoDetail(id) {
   $('detailRemind').textContent = remindText;
   const finishBtn = $('detailFinishBtn');
   finishBtn.disabled = !!t.done;
-  finishBtn.textContent = t.done ? '✓ 已办结' : '✓ 办结';
+  finishBtn.innerHTML = `<svg class="ico"><use href="#i-check"/></svg> ${t.done ? '已办结' : '办结'}`;
   openModal('todoDetailModal');
 }
 
@@ -642,7 +646,7 @@ $('detailFinishBtn').addEventListener('click', () => {
     t.reminded = true;
     selectedTodoIds.delete(t.id);
     save(); renderTodos(); updateBadge();
-    toast('✅ 已办结');
+    toast('已办结');
   }
   closeModal('todoDetailModal');
 });
@@ -688,7 +692,7 @@ $('finishSelectedBtn').addEventListener('click', () => {
   }
   selectedTodoIds.clear();
   save(); renderTodos(); updateBadge();
-  toast(done > 0 ? `✅ 已办结 ${done} 条待办` : '选中的待办均已完成');
+  toast(done > 0 ? `已办结 ${done} 条待办` : '选中的待办均已完成');
 });
 
 // 操作栏 · 编辑：仅对单条选中项生效
@@ -735,14 +739,14 @@ function applyTheme() {
   // 标题栏按钮：显示当前主题对应的图标与提示
   const top = $('themeToggleTop');
   if (top) {
-    top.textContent = light ? '☀️' : '🌙';
+    top.innerHTML = `<svg class="ico"><use href="#i-${light ? 'sun' : 'moon'}"/></svg>`;
     top.title = light ? '当前：日间主题（点击切换夜间）' : '当前：夜间主题（点击切换日间）';
   }
   // 设置面板按钮
   const setIcon = $('setThemeIcon');
   const setText = $('setThemeText');
   const setLabel = $('themeLabel');
-  if (setIcon) setIcon.textContent = light ? '☀️' : '🌙';
+  if (setIcon) setIcon.innerHTML = `<svg class="ico"><use href="#i-${light ? 'sun' : 'moon'}"/></svg>`;
   if (setText) setText.textContent = light ? '日间' : '夜间';
   if (setLabel) setLabel.textContent = light ? '日间模式' : '夜间模式';
 }
@@ -750,7 +754,7 @@ function applyTheme() {
 function toggleTheme() {
   const next = currentTheme() === 'light' ? 'dark' : 'light';
   updateSettings({ theme: next });
-  toast(next === 'light' ? '☀️ 已切换到日间主题' : '🌙 已切换到夜间主题');
+  toast(next === 'light' ? '已切换到日间主题' : '已切换到夜间主题');
 }
 
 function applySettings() {
@@ -1082,7 +1086,7 @@ listen('todo-due', (event) => {
   // 后端已弹窗提醒；这里刷新列表以更新到期高亮和红点
   renderTodos();
   updateBadge();
-  toast(`⏰ 有 ${event.payload} 条待办到期了！`);
+  toast(`有 ${event.payload} 条待办到期了`);
 });
 
 // 全局快捷键 Ctrl+Shift+T：切到待办视图并打开新建待办弹窗

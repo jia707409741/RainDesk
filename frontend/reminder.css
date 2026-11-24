@@ -44,3 +44,16 @@ html, body {
 .btn:hover { filter: brightness(1.12); }
 .btn-later { background: #2b3852; color: #e6ecf7; }
 .btn-done { background: #37d39b; color: #06281c; }
+
+/* 单色线性 SVG 图标：继承文字色，无滤镜 */
+.svg-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ico {
+  width: 1em; height: 1em; display: inline-block;
+  vertical-align: -.14em; flex-shrink: 0;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.bell { display: inline-flex; }
+.btn { gap: 7px; align-items: center; justify-content: center; }
+.btn .ico { font-size: 15px; }
+.close { display: inline-flex; align-items: center; justify-content: center; }

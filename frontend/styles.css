@@ -525,3 +525,37 @@ body.hide-names .icon-preview .preview-name { display: none; }
 .data-dir-row input { flex: 1; min-width: 0; font-size: 12px !important; padding: 8px 10px !important; }
 .data-dir-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
 .setting-hint { margin: 4px 0 0; color: var(--text-dim); font-size: 11px; line-height: 1.6; }
+
+/* ---------- 单色线性 SVG 图标 ----------
+   图标只继承当前文字色，不施加任何滤镜；
+   快捷方式/文件图标保持系统原始色彩，不做灰度处理。 */
+.svg-sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+.ico {
+  width: 1em; height: 1em; display: inline-block;
+  vertical-align: -.14em; flex-shrink: 0;
+  fill: none; stroke: currentColor;
+  stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round;
+}
+.titlebar-brand { display: inline-flex; align-items: center; gap: 8px; }
+.titlebar-brand .ico { font-size: 17px; }
+.win-btn { display: inline-flex; align-items: center; justify-content: center; }
+.win-btn .ico { font-size: 16px; }
+.nav-icon, .ghost-btn, .theme-toggle-icon, .empty-icon, .drop-icon,
+.btn, .toolbar-btn, .todo-due, .todo-detail-btn, .icon-btn {
+  display: inline-flex; align-items: center;
+}
+.ghost-btn { gap: 9px; }
+.ghost-btn .ico { font-size: 16px; }
+.btn { gap: 8px; justify-content: center; }
+.btn .ico { font-size: 16px; }
+.icon-btn { justify-content: center; }
+.icon-btn .ico { font-size: 18px; }
+.toolbar-btn { gap: 7px; }
+.toolbar-btn .ico { font-size: 15px; }
+.todo-due { gap: 4px; }
+.todo-due .ico { font-size: 14px; }
+.todo-detail-btn { gap: 3px; }
+.todo-detail-btn .ico { font-size: 13px; }
+.empty-icon { font-size: 42px; display: inline-flex; margin-bottom: 12px; }
+.drop-icon .ico { font-size: 1em; }
+.settings-header h2 .ico { font-size: 1em; vertical-align: -.1em; }

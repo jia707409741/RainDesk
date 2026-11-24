@@ -14,16 +14,21 @@
   </script>
 </head>
 <body>
+  <svg class="svg-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+    <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+    <symbol id="i-close" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-check" viewBox="0 0 24 24"><path d="m5 12 4 4L19 6"/></symbol>
+  </svg>
   <div class="reminder-card">
     <div class="accent-bar"></div>
     <div class="content">
       <div class="header">
-        <span class="bell">⏰</span>
+        <span class="bell"><svg class="ico" style="font-size:1.2em"><use href="#i-bell"/></svg></span>
         <div class="header-text">
           <div class="title">待办提醒</div>
           <div class="sub" id="extraCount"></div>
         </div>
-        <button class="close" id="closeBtn" title="关闭">✕</button>
+        <button class="close" id="closeBtn" title="关闭"><svg class="ico"><use href="#i-close"/></svg></button>
       </div>
       <div class="body">
         <div class="todo-title" id="todoTitle">—</div>
@@ -32,7 +37,7 @@
       </div>
       <div class="actions">
         <button class="btn btn-later" id="laterBtn">稍后处理</button>
-        <button class="btn btn-done" id="doneBtn">✓ 标记完成</button>
+        <button class="btn btn-done" id="doneBtn"><svg class="ico"><use href="#i-check"/></svg> 标记完成</button>
       </div>
     </div>
   </div>
