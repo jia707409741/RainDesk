@@ -49,6 +49,22 @@ pub struct Todo {
     pub created_at: i64,
 }
 
+/// 备忘录
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Memo {
+    pub id: String,
+    pub title: String,
+    pub content: String,
+    /// 是否置顶（旧数据缺省为 false）
+    #[serde(default)]
+    pub pinned: bool,
+    pub created_at: i64,
+    /// 最后修改时间（旧数据缺省为创建时间）
+    #[serde(default)]
+    pub updated_at: i64,
+}
+
 /// 个性化设置
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -66,6 +82,9 @@ pub struct Settings {
     /// 快速新建待办的全局快捷键
     #[serde(default = "default_new_todo_shortcut")]
     pub new_todo_shortcut: String,
+    /// 备忘录展示方式：card（卡片）| list（列表），旧数据缺省为 card
+    #[serde(default = "default_memo_view")]
+    pub memo_view: String,
 }
 
 impl Default for Settings {
@@ -76,6 +95,7 @@ impl Default for Settings {
             theme: default_theme(),
             toggle_shortcut: default_toggle_shortcut(),
             new_todo_shortcut: default_new_todo_shortcut(),
+            memo_view: default_memo_view(),
         }
     }
 }
@@ -92,12 +112,19 @@ fn default_new_todo_shortcut() -> String {
     "Ctrl+Shift+T".into()
 }
 
+fn default_memo_view() -> String {
+    "card".into()
+}
+
 /// 应用持久化数据
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Store {
     pub groups: Vec<Group>,
     pub todos: Vec<Todo>,
+    /// 备忘录（旧数据没有该字段时为空列表）
+    #[serde(default)]
+    pub memos: Vec<Memo>,
     #[serde(default)]
     pub settings: Settings,
 }
@@ -173,6 +200,14 @@ impl Default for Store {
                     created_at: t,
                 },
             ],
+            memos: vec![Memo {
+                id: "m1".into(),
+                title: "欢迎使用备忘录".into(),
+                content: "在「备忘录」里记录临时想法、长文字或参考资料。\n\n• 点击图钉可以置顶，置顶项会排在最前面\n• 右上角可切换卡片 / 列表展示\n• 支持导出为 Markdown 文件".into(),
+                pinned: true,
+                created_at: t,
+                updated_at: t,
+            }],
             settings: Settings::default(),
         }
     }

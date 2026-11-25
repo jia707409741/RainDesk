@@ -4,7 +4,7 @@ import { getCurrentWebview } from '@tauri-apps/api/webview';
 import { getCurrentWindow } from '@tauri-apps/api/window';
 
 // ---------- 全局状态 ----------
-let store = { groups: [], todos: [] };
+let store = { groups: [], todos: [], memos: [] };
 let currentView = 'launcher';
 let todoFilter = 'pending'; // 默认展示"进行中"
 let selectedTodoIds = new Set(); // 批量删除：已勾选的待办 id
@@ -12,6 +12,7 @@ let visibleTodoIds = [];         // 当前筛选下可见的待办 id（用于�
 let editingGroupId = null;
 let editingShortcut = null; // { groupId, id }
 let editingTodoId = null;
+let editingMemoId = null;
 let detailTodoId = null; // 详情弹窗当前展示的待办 id
 let confirmAction = null;
 let dataDirDefault = ''; // 应用默认数据目录，用于“恢复默认”
@@ -220,9 +221,141 @@ function updateBadge() {
   badge.classList.toggle('hidden', count === 0);
 }
 
+// ---------- 渲染：备忘录 ----------
+function memoUpdatedAt(m) {
+  return m.updatedAt || m.createdAt || 0;
+}
+
+function formatMemoTime(ts) {
+  if (!ts) return '刚刚';
+  const d = new Date(ts);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}月${d.getDate()}日 ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
+function memoMode() {
+  return store.settings?.memoView === 'list' ? 'list' : 'card';
+}
+
+function sortedMemos() {
+  return (store.memos || []).slice().sort((a, b) => {
+    if (!!a.pinned !== !!b.pinned) return a.pinned ? -1 : 1;
+    return memoUpdatedAt(b) - memoUpdatedAt(a);
+  });
+}
+
+// 搜索：默认同时搜索标题和内容；支持「标题:」「内容:」（或 title:/content:）限定范围
+function memoSearchState() {
+  const raw = ($('memoSearch')?.value || '').trim();
+  let field = 'all';
+  let query = raw;
+  const scoped = raw.match(/^(标题|内容|title|content)\s*[:：]\s*([\s\S]*)$/i);
+  if (scoped) {
+    field = ['标题', 'title'].includes(scoped[1].toLowerCase()) ? 'title' : 'content';
+    query = scoped[2].trim();
+  }
+  return { raw, field, query, needle: query.toLocaleLowerCase() };
+}
+
+function memoMatches(m, s) {
+  if (!s.needle) return true;
+  const title = String(m.title || '').toLocaleLowerCase();
+  const content = String(m.content || '').toLocaleLowerCase();
+  if (s.field === 'title') return title.includes(s.needle);
+  if (s.field === 'content') return content.includes(s.needle);
+  return title.includes(s.needle) || content.includes(s.needle);
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function highlightMemoText(text, needle, enabled) {
+  const raw = String(text ?? '');
+  if (!needle || !enabled) return escapeHtml(raw);
+  const re = new RegExp(escapeRegExp(needle), 'gi');
+  let out = '', last = 0, m;
+  while ((m = re.exec(raw)) !== null) {
+    out += escapeHtml(raw.slice(last, m.index)) + `<mark>${escapeHtml(m[0])}</mark>`;
+    last = m.index + m[0].length;
+    if (m[0] === '') re.lastIndex++;
+  }
+  return out + escapeHtml(raw.slice(last));
+}
+
+// 内容命中位置在预览范围之外时，改为展示命中处附近的片段
+function memoPreview(m, s) {
+  const content = (m.content || '').trim();
+  if (s.needle && s.field !== 'title') {
+    const idx = content.toLocaleLowerCase().indexOf(s.needle);
+    if (idx > 300) {
+      const start = Math.max(0, idx - 60);
+      const end = idx + s.needle.length + 120;
+      return (start > 0 ? '…' : '') + content.slice(start, end) + (end < content.length ? '…' : '');
+    }
+  }
+  return content.length > 300 ? content.slice(0, 300) + '…' : content;
+}
+
+function applyMemoViewUI() {
+  const mode = memoMode();
+  const box = $('memos');
+  if (box) {
+    box.classList.toggle('card', mode === 'card');
+    box.classList.toggle('list', mode === 'list');
+  }
+  document.querySelectorAll('[data-memo-view]').forEach((btn) => {
+    btn.classList.toggle('active', btn.dataset.memoView === mode);
+  });
+}
+
+function renderMemos() {
+  const box = $('memos');
+  if (!box) return;
+  applyMemoViewUI();
+  const s = memoSearchState();
+  const all = sortedMemos();
+  const memos = all.filter((m) => memoMatches(m, s));
+  const countEl = $('memoSearchCount');
+  if (countEl) countEl.textContent = s.query ? `找到 ${memos.length} / ${all.length} 条` : (all.length ? `共 ${all.length} 条` : '');
+  const clearBtn = $('memoSearchClear');
+  if (clearBtn) clearBtn.classList.toggle('hidden', !s.raw);
+  if (memos.length === 0) {
+    const msg = all.length === 0
+      ? '还没有备忘录，点击右上角「新建备忘录」开始吧'
+      : `没有找到匹配的备忘录（关键词：${escapeHtml(s.query)}）`;
+    box.innerHTML = `<div class="empty memo-empty"><span class="empty-icon"><svg class="ico" style="font-size:1em"><use href="#i-note"/></svg></span>${msg}</div>`;
+    return;
+  }
+  box.innerHTML = memos.map((m) => {
+    const pinned = !!m.pinned;
+    const id = escapeHtml(m.id);
+    const content = (m.content || '').trim();
+    const preview = memoPreview(m, s);
+    const updated = formatMemoTime(memoUpdatedAt(m));
+    return `
+    <article class="memo${pinned ? ' pinned' : ''}" data-memo="${id}">
+      <div class="memo-head">
+        <div class="memo-title" title="${escapeHtml(m.title || '')}">${highlightMemoText(m.title || '未命名备忘录', s.needle, s.field !== 'content')}</div>
+        <button class="memo-pin${pinned ? ' on' : ''}" data-memo-pin="${id}" title="${pinned ? '取消置顶' : '置顶'}" aria-label="${pinned ? '取消置顶' : '置顶'}"><svg class="ico"><use href="#i-pin"/></svg></button>
+      </div>
+      <div class="memo-content" title="${escapeHtml(content)}">${highlightMemoText(preview, s.needle, s.field !== 'title') || '（空）'}</div>
+      <div class="memo-foot">
+        <span class="memo-time">${pinned ? '📌 已置顶 · ' : ''}更新于 ${updated}</span>
+        <div class="memo-actions">
+          <button class="memo-act" data-memo-export="${id}" title="导出这一条"><svg class="ico"><use href="#i-export"/></svg></button>
+          <button class="memo-act" data-memo-edit="${id}" title="编辑"><svg class="ico"><use href="#i-pencil"/></svg></button>
+          <button class="memo-act danger" data-memo-delete="${id}" title="删除"><svg class="ico"><use href="#i-trash"/></svg></button>
+        </div>
+      </div>
+    </article>`;
+  }).join('');
+}
+
 function renderAll() {
   renderGroups();
   renderTodos();
+  renderMemos();
   updateBadge();
 }
 
@@ -253,6 +386,7 @@ function switchView(view) {
   currentView = view;
   $('view-launcher').classList.toggle('hidden', currentView !== 'launcher');
   $('view-todos').classList.toggle('hidden', currentView !== 'todos');
+  $('view-memos').classList.toggle('hidden', currentView !== 'memos');
 }
 
 document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -721,6 +855,123 @@ $('confirmOkBtn').addEventListener('click', () => {
   closeModal('confirmModal');
 });
 
+// ---------- 备忘录 ----------
+function openMemoModal(memo) {
+  editingMemoId = memo?.id ?? null;
+  $('memoModalTitle').textContent = memo ? '编辑备忘录' : '新建备忘录';
+  $('memoTitle').value = memo?.title ?? '';
+  $('memoContent').value = memo?.content ?? '';
+  openModal('memoModal');
+  $('memoTitle').focus();
+}
+
+$('addMemoBtn').addEventListener('click', () => openMemoModal(null));
+
+$('memoSearch').addEventListener('input', renderMemos);
+$('memoSearch').addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && $('memoSearch').value) {
+    e.stopPropagation();
+    $('memoSearch').value = '';
+    renderMemos();
+  }
+});
+$('memoSearchClear').addEventListener('click', () => {
+  $('memoSearch').value = '';
+  renderMemos();
+  $('memoSearch').focus();
+});
+
+$('saveMemoBtn').addEventListener('click', () => {
+  const title = $('memoTitle').value.trim().slice(0, 40);
+  const content = $('memoContent').value.trim().slice(0, 5000);
+  if (!title && !content) { toast('请输入标题或内容'); return; }
+  const now = Date.now();
+  if (editingMemoId) {
+    const m = (store.memos || []).find((x) => x.id === editingMemoId);
+    if (m) {
+      m.title = title || '未命名备忘录';
+      m.content = content;
+      m.updatedAt = now;
+    }
+  } else {
+    (store.memos ||= []).push({
+      id: uid('m'),
+      title: title || '未命名备忘录',
+      content,
+      pinned: false,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+  save();
+  renderMemos();
+  closeModal('memoModal');
+  toast(editingMemoId ? '备忘录已更新' : '备忘录已创建');
+});
+
+// 卡片 / 列表切换（写入 settings 持久化）
+$('memoViewSwitch').addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-memo-view]');
+  if (!btn) return;
+  const mode = btn.dataset.memoView === 'list' ? 'list' : 'card';
+  if (mode === memoMode()) return;
+  updateSettings({ memoView: mode });
+  renderMemos();
+});
+
+// 置顶 / 编辑 / 删除 / 单条导出
+$('memos').addEventListener('click', (e) => {
+  const pinBtn = e.target.closest('[data-memo-pin]');
+  const editBtn = e.target.closest('[data-memo-edit]');
+  const delBtn = e.target.closest('[data-memo-delete]');
+  const exportBtn = e.target.closest('[data-memo-export]');
+  const id = pinBtn?.dataset.memoPin || editBtn?.dataset.memoEdit
+    || delBtn?.dataset.memoDelete || exportBtn?.dataset.memoExport;
+  if (!id) return;
+  const m = (store.memos || []).find((x) => x.id === id);
+  if (!m) return;
+
+  if (pinBtn) {
+    m.pinned = !m.pinned;
+    save();
+    renderMemos();
+    toast(m.pinned ? '已置顶' : '已取消置顶');
+  } else if (editBtn) {
+    openMemoModal(m);
+  } else if (delBtn) {
+    askConfirm(`确定删除备忘录「${m.title || '未命名备忘录'}」吗？此操作不可撤销。`, () => {
+      store.memos = (store.memos || []).filter((x) => x.id !== id);
+      save();
+      renderMemos();
+      toast('备忘录已删除');
+    });
+  } else if (exportBtn) {
+    exportMemoFile([m], `${m.title || '备忘录'}.md`);
+  }
+});
+
+function memoToMarkdown(m) {
+  const updated = formatMemoTime(memoUpdatedAt(m));
+  const pin = m.pinned ? '> 📌 已置顶\n\n' : '';
+  return `## ${m.title || '未命名备忘录'}\n\n${pin}${m.content || ''}\n\n_更新于 ${updated}_\n`;
+}
+
+async function exportMemoFile(list, fileName) {
+  if (!list.length) { toast('没有可导出的备忘录'); return; }
+  const content = `# RainDesk 备忘录\n\n导出时间：${new Date().toLocaleString('zh-CN')}\n\n---\n\n`
+    + list.map(memoToMarkdown).join('\n---\n\n');
+  try {
+    const path = await invoke('export_memos', { content, defaultFileName: fileName });
+    if (path) toast('已导出到：' + path);
+  } catch (e) {
+    toast('导出失败：' + e);
+  }
+}
+
+$('exportMemosBtn').addEventListener('click', () => {
+  exportMemoFile(sortedMemos(), 'RainDesk-备忘录.md');
+});
+
 // ---------- 数据目录 ----------
 $('openDataDir').addEventListener('click', () => {
   invoke('open_data_dir').catch((e) => toast('打开失败：' + e));
@@ -764,6 +1015,7 @@ function applySettings() {
   document.documentElement.style.setProperty('--icon-size', size + 'px');
   document.body.classList.toggle('hide-names', s.showNames === false);
   applyTheme();
+  applyMemoViewUI();
   // 启动时把按钮文字同步为真实注册的快捷键，
   // 否则界面一直显示 HTML 里的默认值，用户按显示值会以为快捷键失效。
   updateHotkeyButtons();
@@ -1102,7 +1354,7 @@ async function init() {
     store = await invoke('get_store');
   } catch (e) {
     toast('加载数据失败：' + e);
-    store = { groups: [], todos: [] };
+    store = { groups: [], todos: [], memos: [] };
   }
   renderAll();
   applySettings();

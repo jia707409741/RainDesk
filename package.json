@@ -1,6 +1,6 @@
 {
   "name": "raindesk",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "RainDesk - 分组快捷启动器与待办提醒桌面应用",
   "private": true,
   "scripts": {

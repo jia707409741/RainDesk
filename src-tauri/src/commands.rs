@@ -71,6 +71,31 @@ pub fn save_store(store: Store, state: State<'_, AppState>) -> Result<(), String
     state.persist()
 }
 
+/// 导出备忘录：弹出保存对话框，把 Markdown 文本写到用户选择的位置。
+/// 返回保存路径；用户取消时返回 null。
+#[tauri::command]
+pub async fn export_memos(
+    content: String,
+    default_file_name: Option<String>,
+    app: tauri::AppHandle,
+) -> Result<Option<String>, String> {
+    let name = default_file_name.unwrap_or_else(|| "RainDesk-备忘录.md".into());
+    let path = app
+        .dialog()
+        .file()
+        .set_title("导出备忘录")
+        .set_file_name(name)
+        .add_filter("Markdown", &["md"])
+        .add_filter("文本文件", &["txt"])
+        .blocking_save_file();
+
+    let Some(path) = path.and_then(|p| p.into_path().ok()) else {
+        return Ok(None);
+    };
+    fs::write(&path, content.as_bytes()).map_err(|e| format!("写入文件失败: {e}"))?;
+    Ok(Some(path.to_string_lossy().to_string()))
+}
+
 /// 数据目录信息（当前 / 默认 / 是否已自定义）
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]

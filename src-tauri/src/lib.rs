@@ -81,6 +81,15 @@ fn start_reminder_engine(app: tauri::AppHandle) {
     });
 }
 
+/// 还原主面板并置于前台（托盘、快捷键与二次启动时共用）。
+fn show_main_window(app: &tauri::AppHandle) {
+    if let Some(win) = app.get_webview_window("main") {
+        let _ = win.unminimize();
+        let _ = win.show();
+        let _ = win.set_focus();
+    }
+}
+
 /// 显示 / 隐藏主面板（托盘与全局快捷键共用）。
 /// 最小化状态下优先还原，避免用户误以为快捷键失效。
 fn toggle_main_window(app: &tauri::AppHandle) {
@@ -88,9 +97,7 @@ fn toggle_main_window(app: &tauri::AppHandle) {
         let minimized = win.is_minimized().unwrap_or(false);
         let visible = win.is_visible().unwrap_or(false);
         if minimized || !visible {
-            let _ = win.unminimize();
-            let _ = win.show();
-            let _ = win.set_focus();
+            show_main_window(app);
         } else {
             let _ = win.hide();
         }
@@ -167,11 +174,7 @@ pub fn apply_global_shortcuts(
             if event.state != ShortcutState::Pressed {
                 return;
             }
-            if let Some(win) = app.get_webview_window("main") {
-                let _ = win.show();
-                let _ = win.unminimize();
-                let _ = win.set_focus();
-            }
+            show_main_window(app);
             let _ = app.emit("quick-new-todo", ());
         }) {
             errors.push(format!("新建待办快捷键「{new_todo}」注册失败：{e}"));
@@ -204,6 +207,11 @@ fn register_global_shortcuts(app: &tauri::AppHandle) -> Result<(), Box<dyn std::
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        // 单实例：第二次双击时直接把已运行实例的主面板唤醒到前台，
+        // 不再创建第二个进程，也就不会重复注册系统托盘图标。
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            show_main_window(app);
+        }))
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_global_shortcut::Builder::new().build())
@@ -247,6 +255,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::get_store,
             commands::save_store,
+            commands::export_memos,
             commands::get_data_dir,
             commands::get_data_dir_info,
             commands::open_data_dir,
