@@ -3,6 +3,7 @@ mod commands;
 mod config;
 mod icon;
 mod models;
+mod plugin;
 mod store;
 
 use std::sync::atomic::Ordering;
@@ -220,6 +221,11 @@ pub fn run() {
             let data_path = config::resolve_data_path(app.handle());
             app.manage(AppState::load(data_path));
 
+            // 插件中心：扫描数据目录下的 plugins 并加载 Rust 动态库
+            let plugin_manager = plugin::PluginManager::default();
+            plugin_manager.reload(app.handle());
+            app.manage(plugin_manager);
+
             // 启动提醒引擎
             start_reminder_engine(app.handle().clone());
 
@@ -256,6 +262,13 @@ pub fn run() {
             commands::get_store,
             commands::save_store,
             commands::export_memos,
+            plugin::list_plugins,
+            plugin::set_plugin_enabled,
+            plugin::invoke_plugin,
+            plugin::install_plugin,
+            plugin::remove_plugin,
+            plugin::open_plugins_dir,
+            plugin::get_plugin_dir,
             commands::get_data_dir,
             commands::get_data_dir_info,
             commands::open_data_dir,

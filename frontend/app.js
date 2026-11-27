@@ -5,6 +5,7 @@ import { getCurrentWindow } from '@tauri-apps/api/window';
 
 // ---------- 全局状态 ----------
 let store = { groups: [], todos: [], memos: [] };
+let plugins = []; // 插件中心：由后端扫描动态库得到
 let currentView = 'launcher';
 let todoFilter = 'pending'; // 默认展示"进行中"
 let selectedTodoIds = new Set(); // 批量删除：已勾选的待办 id
@@ -387,6 +388,8 @@ function switchView(view) {
   $('view-launcher').classList.toggle('hidden', currentView !== 'launcher');
   $('view-todos').classList.toggle('hidden', currentView !== 'todos');
   $('view-memos').classList.toggle('hidden', currentView !== 'memos');
+  $('view-plugins').classList.toggle('hidden', currentView !== 'plugins');
+  if (view === 'plugins') loadPlugins();
 }
 
 document.querySelectorAll('.nav-item').forEach((btn) => {
@@ -972,6 +975,147 @@ $('exportMemosBtn').addEventListener('click', () => {
   exportMemoFile(sortedMemos(), 'RainDesk-备忘录.md');
 });
 
+// ---------- 插件中心 ----------
+function setPluginOutput(title, text) {
+  const el = $('pluginOutput');
+  if (!el) return;
+  const time = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  let body = String(text ?? '');
+  try { body = JSON.stringify(JSON.parse(body), null, 2); } catch (_) { /* 非 JSON 原样显示 */ }
+  el.textContent = `[${time}] ${title}\n${body}`;
+}
+
+async function loadPluginDirHint() {
+  const hint = $('pluginDirHint');
+  if (!hint) return;
+  try {
+    const dir = await invoke('get_plugin_dir');
+    hint.innerHTML = `插件目录：<code>${escapeHtml(dir)}</code>　把 Rust 编译的动态库放进去后点「刷新」即可加载。`;
+  } catch (e) {
+    hint.textContent = '插件目录读取失败：' + e;
+  }
+}
+
+async function loadPlugins() {
+  try {
+    plugins = await invoke('list_plugins');
+    renderPlugins();
+  } catch (e) {
+    toast('加载插件列表失败：' + e);
+  }
+}
+
+function renderPlugins() {
+  const box = $('plugins');
+  if (!box) return;
+  if (!plugins.length) {
+    box.innerHTML = `<div class="plugin-empty">
+      <div class="empty-icon">🧩</div>
+      还没有插件。可点击右上角「安装插件」选择 Rust 编译的 dll，<br>
+      或把动态库放入插件目录后点「刷新」。插件需导出 info / invoke / free 接口（apiVersion = 1）。
+    </div>`;
+    return;
+  }
+  box.innerHTML = plugins.map((p) => {
+    const key = escapeHtml(p.key);
+    const status = !p.loaded
+      ? '<span class="plugin-status error">加载失败</span>'
+      : p.enabled
+        ? '<span class="plugin-status on">已启用</span>'
+        : '<span class="plugin-status off">已停用</span>';
+    const canRun = p.enabled && p.loaded;
+    const actions = (p.actions || []).map((a) =>
+      `<button class="plugin-action-btn" data-action="${escapeHtml(a.id)}" data-key="${key}" title="${escapeHtml(a.description || a.name)}" ${canRun ? '' : 'disabled'}>${escapeHtml(a.name)}</button>`
+    ).join('') || '<span class="plugin-no-action">无可用动作</span>';
+    return `
+      <article class="plugin-card ${p.enabled ? '' : 'disabled'}">
+        <div class="plugin-icon">${escapeHtml(p.icon || '🧩')}</div>
+        <div class="plugin-body">
+          <div class="plugin-head">
+            <div class="plugin-name" title="${escapeHtml(p.name)}">${escapeHtml(p.name)}</div>
+            ${status}
+          </div>
+          <div class="plugin-meta">v${escapeHtml(p.version || '—')} · ${escapeHtml(p.author || '未知作者')} · ${escapeHtml(p.fileName)}</div>
+          <div class="plugin-desc">${escapeHtml(p.description || '暂无说明')}</div>
+          ${p.error ? `<div class="plugin-error">${escapeHtml(p.error)}</div>` : ''}
+          <div class="plugin-action-row">
+            <input class="plugin-args" data-key="${key}" value="{}" placeholder='参数 JSON，如 {"x":1}' spellcheck="false" />
+            ${actions}
+          </div>
+        </div>
+        <div class="plugin-card-actions">
+          <button class="plugin-mini-btn" data-toggle="${key}">${p.enabled ? '停用' : '启用'}</button>
+          <button class="plugin-mini-btn danger" data-remove="${key}">移除</button>
+        </div>
+      </article>`;
+  }).join('');
+}
+
+async function callPluginAction(key, action) {
+  const input = Array.from($('plugins').querySelectorAll('.plugin-args')).find((el) => el.dataset.key === key);
+  const args = input?.value || '{}';
+  try {
+    const result = await invoke('invoke_plugin', { key, action, args });
+    const p = plugins.find((x) => x.key === key);
+    setPluginOutput(`${p?.name || key} → ${action}`, result);
+  } catch (e) {
+    setPluginOutput(`${key} → ${action} 失败`, String(e));
+    toast('插件调用失败：' + e);
+  }
+}
+
+$('plugins').addEventListener('click', async (e) => {
+  const actionBtn = e.target.closest('[data-action]');
+  if (actionBtn) { await callPluginAction(actionBtn.dataset.key, actionBtn.dataset.action); return; }
+
+  const toggleBtn = e.target.closest('[data-toggle]');
+  if (toggleBtn) {
+    const key = toggleBtn.dataset.toggle;
+    const p = plugins.find((x) => x.key === key);
+    if (!p) return;
+    try {
+      await invoke('set_plugin_enabled', { key, enabled: !p.enabled });
+      await loadPlugins();
+      toast(p.enabled ? `已停用「${p.name}」` : `已启用「${p.name}」`);
+    } catch (err) { toast('设置插件状态失败：' + err); }
+    return;
+  }
+
+  const removeBtn = e.target.closest('[data-remove]');
+  if (removeBtn) {
+    const key = removeBtn.dataset.remove;
+    const p = plugins.find((x) => x.key === key);
+    if (!p) return;
+    askConfirm(`确定移除插件「${p.name}」吗？动态库会移到 plugins/.trash，可手动恢复。`, async () => {
+      try {
+        await invoke('remove_plugin', { key });
+        await loadPlugins();
+        toast(`已移除「${p.name}」`);
+      } catch (err) { toast('移除插件失败：' + err); }
+    });
+  }
+});
+
+$('installPluginBtn').addEventListener('click', async () => {
+  try {
+    const path = await invoke('install_plugin');
+    if (path) { toast('已安装插件：' + path); await loadPlugins(); }
+  } catch (e) { toast('安装插件失败：' + e); }
+});
+
+$('refreshPluginsBtn').addEventListener('click', async () => {
+  await loadPlugins();
+  toast(`已扫描到 ${plugins.length} 个插件`);
+});
+
+$('openPluginDirBtn').addEventListener('click', () => {
+  invoke('open_plugins_dir').catch((e) => toast('打开插件目录失败：' + e));
+});
+
+$('clearPluginOutputBtn').addEventListener('click', () => {
+  $('pluginOutput').textContent = '尚未调用插件动作。';
+});
+
 // ---------- 数据目录 ----------
 $('openDataDir').addEventListener('click', () => {
   invoke('open_data_dir').catch((e) => toast('打开失败：' + e));
@@ -1360,6 +1504,8 @@ async function init() {
   applySettings();
   setupWindowControls();
   setupFileDrop();
+  loadPluginDirHint();
+  loadPlugins();
   // 每分钟刷新一次相对时间显示
   setInterval(() => { if (currentView === 'todos') renderTodos(); }, 60000);
 }

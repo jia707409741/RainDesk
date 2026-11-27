@@ -85,6 +85,9 @@ pub struct Settings {
     /// 备忘录展示方式：card（卡片）| list（列表），旧数据缺省为 card
     #[serde(default = "default_memo_view")]
     pub memo_view: String,
+    /// 已停用的插件 key 列表（旧数据缺省为空）
+    #[serde(default)]
+    pub disabled_plugins: Vec<String>,
 }
 
 impl Default for Settings {
@@ -96,6 +99,7 @@ impl Default for Settings {
             toggle_shortcut: default_toggle_shortcut(),
             new_todo_shortcut: default_new_todo_shortcut(),
             memo_view: default_memo_view(),
+            disabled_plugins: Vec::new(),
         }
     }
 }
